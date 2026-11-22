@@ -2,7 +2,11 @@ import { execFileSync } from 'node:child_process';
 
 const packageName = 'com.sinnaruggggg.nanaoffice';
 const timeout = ms => new Promise(resolve => setTimeout(resolve,ms));
-const pid = execFileSync('adb',['shell','pidof',packageName],{encoding:'utf8'}).trim().split(/\s+/)[0];
+let pid;
+for (let attempt=0; attempt<12 && !pid; attempt++) {
+  try { pid = execFileSync('adb',['shell','pidof',packageName],{encoding:'utf8'}).trim().split(/\s+/)[0]; }
+  catch { await timeout(750); }
+}
 if (!/^\d+$/.test(pid)) throw Error('Android editor process did not start');
 execFileSync('adb',['forward','tcp:9222','localabstract:webview_devtools_remote_'+pid]);
 let channel;
