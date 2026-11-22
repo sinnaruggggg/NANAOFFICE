@@ -39,6 +39,13 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            int lightBars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            var controller = getWindow().getInsetsController();
+            if (controller != null) controller.setSystemBarsAppearance(lightBars, lightBars);
+        }
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setAllowFileAccess(false);
@@ -51,7 +58,8 @@ public class MainActivity extends Activity {
         frame.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         frame.setOnApplyWindowInsetsListener((view, insets) -> {
             if (android.os.Build.VERSION.SDK_INT >= 30) {
-                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars());
+                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars()
+                        | android.view.WindowInsets.Type.displayCutout() | android.view.WindowInsets.Type.ime());
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             }
             return insets;
@@ -75,7 +83,7 @@ public class MainActivity extends Activity {
             path = path.substring(1);
             String mime;
             if (path.endsWith(".html")) mime = "text/html";
-            else if (path.endsWith(".js")) mime = "text/javascript";
+            else if (path.endsWith(".js") || path.endsWith(".mjs")) mime = "text/javascript";
             else if (path.endsWith(".css")) mime = "text/css";
             else if (path.endsWith(".wasm")) mime = "application/wasm";
             else if (path.endsWith(".png")) mime = "image/png";
@@ -99,7 +107,9 @@ public class MainActivity extends Activity {
             pendingOpen = callback;
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
+            String[] accept = params.getAcceptTypes();
+            intent.setType(accept.length == 1 && (".pdf".equals(accept[0]) || "application/pdf".equals(accept[0]))
+                    ? "application/pdf" : "*/*");
             try { startActivityForResult(intent, OPEN_FILE); }
             catch (Exception error) { pendingOpen = null; callback.onReceiveValue(null); }
             return true;
@@ -111,19 +121,32 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (pendingSave != null) return;
                 if (encoded == null || encoded.length() > MAX_ENCODED || filename == null ||
-                    !filename.matches("[^/\\\\]{1,220}\\.(hwp|hwpx|xlsx|pptx)")) {
+                    !filename.matches("[^/\\\\]{1,220}\\.(hwp|hwpx|xlsx|pptx|pdf|docx|csv|tsv|txt|md)")) {
                     saveResult("error", "파일 이름 또는 크기를 확인하세요.");
                     return;
                 }
                 pendingSave = encoded;
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("application/octet-stream");
+                intent.setType(saveMime(filename));
                 intent.putExtra(Intent.EXTRA_TITLE, filename);
                 try { startActivityForResult(intent, CREATE_FILE); }
                 catch (Exception error) { pendingSave = null; saveResult("error", "저장 위치를 열 수 없습니다."); }
             });
         }
+    }
+
+    private static String saveMime(String filename) {
+        if (filename.endsWith(".pdf")) return "application/pdf";
+        if (filename.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (filename.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (filename.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        if (filename.endsWith(".hwp")) return "application/x-hwp";
+        if (filename.endsWith(".hwpx")) return "application/hwp+zip";
+        if (filename.endsWith(".csv")) return "text/csv";
+        if (filename.endsWith(".tsv")) return "text/tab-separated-values";
+        if (filename.endsWith(".md")) return "text/markdown";
+        return "text/plain";
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+release-fast/
 android/.gradle/
 android/build/
 android/app/build/

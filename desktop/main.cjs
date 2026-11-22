@@ -6,7 +6,7 @@ const { prepareOffice } = require('./office.cjs');
 
 const LINK = 'nanaoffice://local';
 const LIMIT = 48 * 1024 * 1024;
-const supported = /\.(?:hwp|hwpx|xlsx|pptx)$/i;
+const supported = /\.(?:hwp|hwpx|xlsx|pptx|pdf|docx|csv|tsv|txt|md)$/i;
 protocol.registerSchemesAsPrivileged([{ scheme:'nanaoffice', privileges:{
   standard:true, secure:true, supportFetchAPI:true, corsEnabled:true,
 }}]);
@@ -34,6 +34,7 @@ app.whenReady().then(async () => {
     const filename = path.resolve(dist, '.' + decodeURIComponent(url.pathname));
     if (url.host !== 'local' || !filename.startsWith(dist + path.sep)) return new Response(null, { status: 404 });
     const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8',
+      '.mjs':'text/javascript; charset=utf-8',
       '.css':'text/css; charset=utf-8', '.wasm':'application/wasm', '.png':'image/png' };
     try {
       return new Response(await fs.readFile(filename), { headers:{

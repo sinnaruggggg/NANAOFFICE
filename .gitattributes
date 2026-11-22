@@ -3,5 +3,6 @@
 *.ico binary
 *.xlsx binary
 *.pptx binary
+*.docx binary
 *.pdf binary
 public/licenses/** -text

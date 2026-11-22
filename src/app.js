@@ -1,6 +1,8 @@
 import './style.css';
 import { FILE_LIMIT, openOffice, columnName, sheetCells, slideFields } from './ooxml.js';
 import { patchableHwpx, textDelta } from './hwpx.js';
+import { encodeTable, encodeText, openText, readTable } from './text-files.js';
+import { openDocx } from './docx.js';
 
 const byId = id => document.getElementById(id);
 const home = byId('home');
@@ -8,6 +10,8 @@ const workspace = byId('workspace');
 const editor = byId('editor');
 const picker = byId('picker');
 const saveButton = byId('save');
+const accepted = new Set(['hwp','hwpx','pptx','xlsx','pdf','docx','csv','tsv','txt','md']);
+const allTypes = [...accepted].map(extension => '.' + extension).join(',');
 let active = null;
 let busy = false;
 let previewURL;
@@ -62,13 +66,96 @@ function canSwitch() {
 }
 function showHome() {
   if (!canSwitch()) return;
-  active?.doc?.free();
+  releaseDocument(active);
   active = null;
   editor.replaceChildren();
   removePreview();
   workspace.hidden = true;
   home.hidden = false;
+  document.body.classList.remove('editing');
   status('');
+}
+
+function releaseDocument(file) {
+  file?.doc?.free();
+  file?.unmount?.();
+  if (file?.pdf) void file.pdf.dispose().catch(() => {});
+}
+
+function renderPlain(file) {
+  const panel = el('div',undefined,'panel');
+  const label = field('본문', file.text.value, value => {
+    file.text.value = value;
+    edit();
+  });
+  label.querySelector('textarea').classList.add('plain-textarea');
+  panel.append(label);
+  editor.append(panel);
+}
+
+function renderWord(word) {
+  const panel = el('div',undefined,'panel');
+  const controls = el('div',undefined,'controls');
+  const fields = el('div',undefined,'fields');
+  const note = word.protectedDocument ? '편집 보호가 설정된 문서입니다.' :
+    '본문 텍스트를 편집합니다. 문서에 포함된 서식과 개체는 사본에 유지됩니다.';
+  panel.append(el('p',note,'note'),controls,fields);
+  editor.append(panel);
+  viewport(controls, page => {
+    fields.replaceChildren();
+    word.paragraphs.slice(page*24,page*24+24).forEach((nodes,index) => {
+      let previous = nodes.map(node => node.textContent).join('');
+      const label = field('본문 문단 ' + (page*24+index+1),previous,word.protectedDocument ? null : value => {
+        word.update(nodes, previous, value);
+        previous = value;
+        edit();
+      });
+      fields.append(label);
+    });
+    if (!fields.hasChildNodes()) fields.append(el('p','편집할 본문 텍스트가 없습니다.'));
+  }, () => Math.ceil(word.paragraphs.length/24));
+}
+
+function renderTable(table) {
+  const controls = el('div',undefined,'controls');
+  const scroll = el('div',undefined,'sheet-wrap');
+  editor.append(controls,scroll);
+  const columns = Math.max(1,table.rows.reduce((count,row) => Math.max(count,row.length),0));
+  const maxColumns = Math.min(256,columns + 1);
+  const columnPick = choose(Array.from({length: Math.ceil(maxColumns / 12)}, (_, i) =>
+    columnName(i * 12) + '–' + columnName(Math.min(maxColumns - 1,i*12+11))), '열 범위', value => {
+    columnGroup = value;
+    refresh();
+  });
+  let columnGroup = 0;
+  controls.append(columnPick);
+  const refresh = viewport(controls,page => {
+    const grid = el('table',undefined,'grid');
+    const header = grid.createTHead().insertRow();
+    header.append(el('th','#'));
+    const last = Math.min(maxColumns,columnGroup*12+12);
+    for (let column=columnGroup*12; column<last; column++) header.append(el('th',columnName(column)));
+    const body = grid.createTBody();
+    for (let index=page*30; index<Math.min(table.rows.length+1,page*30+30); index++) {
+      const row = body.insertRow();
+      row.append(el('th',String(index+1)));
+      for (let column=columnGroup*12; column<last; column++) {
+        const cell = row.insertCell();
+        const input = el('input');
+        input.value = table.rows[index]?.[column] || '';
+        input.setAttribute('aria-label',columnName(column)+(index+1));
+        input.addEventListener('change',() => {
+          if (input.value === (table.rows[index]?.[column] || '')) return;
+          const values = table.rows[index] ||= [];
+          while (values.length <= column) values.push('');
+          values[column] = input.value;
+          edit();
+        });
+        cell.append(input);
+      }
+    }
+    scroll.replaceChildren(grid);
+  }, () => Math.ceil((table.rows.length+1)/30));
 }
 function viewport(selector, change, max, initially = 0) {
   let page = initially;
@@ -187,6 +274,17 @@ function changeText(doc, sec, para, oldValue, value) {
 }
 function renderHwp(doc, hwpx) {
   const split = el('div', undefined, 'split');
+  split.classList.add('hwp-workspace');
+  const view = el('div',undefined,'controls hwp-switcher');
+  const editTab = button('본문 편집',() => selectPanel('text'));
+  const previewTab = button('쪽 미리보기',() => selectPanel('preview'));
+  function selectPanel(panel) {
+    split.dataset.panel = panel;
+    editTab.setAttribute('aria-pressed',String(panel === 'text'));
+    previewTab.setAttribute('aria-pressed',String(panel === 'preview'));
+  }
+  view.append(editTab,previewTab);
+  selectPanel('text');
   const page = el('div', undefined, 'panel preview');
   const pageBar = el('div', undefined, 'controls');
   const image = el('img');
@@ -261,14 +359,28 @@ function renderHwp(doc, hwpx) {
   }
   textPanel.append(controls, el('p','본문 문단을 편집합니다. 표와 개체가 있는 문단은 미리보기에서 확인할 수 있습니다.','note'), paragraphBar, paragraphs);
   split.append(page, textPanel);
-  editor.append(split);
+  editor.append(view,split);
   jump();
 }
+
+function renderDocument(file) {
+  if (file.pdf) {
+    file.unmount = file.pdfModule.renderPdf(editor,file.pdf,{
+      el,button,status,changed:dirty => { file.dirty = dirty; },
+    });
+  } else if (file.doc) renderHwp(file.doc,file.hwpx);
+  else if (file.word) renderWord(file.word);
+  else if (file.table) renderTable(file.table);
+  else if (file.text) renderPlain(file);
+  else if (file.extension === 'xlsx') renderWorkbook(file.office);
+  else renderSlides(file.office);
+}
+
 async function openDocument(name, bytes) {
   if (!canSwitch()) return;
   const extension = name.split('.').pop().toLowerCase();
-  if (!['hwp','hwpx','pptx','xlsx'].includes(extension)) {
-    status('HWP, HWPX, XLSX, PPTX 파일을 선택하세요.', true);
+  if (!accepted.has(extension)) {
+    status('이 파일 형식은 열 수 없습니다. ' + [...accepted].map(value => value.toUpperCase()).join(', '), true);
     return;
   }
   if (bytes?.byteLength > FILE_LIMIT) {
@@ -286,30 +398,48 @@ async function openDocument(name, bytes) {
         next.hwpx = patchableHwpx(bytes, next.doc.getSectionCount());
         if (!next.hwpx) throw Error('지원하는 HWPX 섹션 구성을 찾지 못했습니다.');
       }
-    }
-    else {
+    } else if (extension === 'pdf') {
+      if (!bytes) throw Error('PDF 파일을 선택하세요.');
+      const pdfModule = await import('./pdf.js');
+      const pdf = await pdfModule.openPdf(bytes);
+      next = {name,extension,pdf,pdfModule,original:bytes};
+    } else if (extension === 'docx') {
+      const input = bytes || new Uint8Array(await (await fetch('./blank.docx')).arrayBuffer());
+      next = {name,extension,word:openDocx(input),original:input};
+    } else if (['csv','tsv','txt','md'].includes(extension)) {
+      const text = openText(bytes);
+      next = ['csv','tsv'].includes(extension) ?
+        {name,extension,table:readTable(text,extension),original:bytes} :
+        {name,extension,text,original:bytes};
+    } else {
       const input = bytes || new Uint8Array(await (await fetch('./blank.' + extension)).arrayBuffer());
       next = {name, extension, office: openOffice(input, extension), original: input};
     }
+    previous?.unmount?.();
     editor.replaceChildren();
     removePreview();
     active = next;
-    if (next.doc) renderHwp(next.doc, next.hwpx);
-    else if (extension === 'xlsx') renderWorkbook(next.office);
-    else renderSlides(next.office);
     byId('filename').textContent = name;
+    byId('filename').title = name;
     workspace.hidden = false;
     home.hidden = true;
-    previous?.doc?.free();
+    document.body.classList.add('editing');
+    status('');
+    renderDocument(next);
+    releaseDocument(previous);
     status('');
   } catch (error) {
-    next?.doc?.free();
+    releaseDocument(next);
     active = previous;
     if (next && previous) {
       editor.replaceChildren();
-      if (previous.doc) renderHwp(previous.doc, previous.hwpx);
-      else if (previous.extension === 'xlsx') renderWorkbook(previous.office);
-      else renderSlides(previous.office);
+      byId('filename').textContent = previous.name;
+      byId('filename').title = previous.name;
+      renderDocument(previous);
+    } else if (next) {
+      workspace.hidden = true;
+      home.hidden = false;
+      document.body.classList.remove('editing');
     }
     status('파일을 열 수 없습니다. ' + (error.message || String(error)), true);
   } finally { busy = false; }
@@ -318,6 +448,10 @@ function serialize() {
   if (!active.dirty && active.original) return active.original;
   if (active.office) return active.office.serialize();
   if (active.hwpx) return active.hwpx.serialize();
+  if (active.word) return active.word.serialize();
+  if (active.table) return encodeTable(active.table);
+  if (active.text) return encodeText(active.text,active.text.value);
+  if (active.pdf) return active.pdfModule.savePdf(active.pdf,active.original);
   const result = active.extension === 'hwp' ? active.doc.exportHwpWithReport() : active.doc.exportHwpxWithReport();
   try {
     if (!result.hasBytes()) throw Error('이 문서를 안전하게 저장할 수 없습니다.');
@@ -337,6 +471,7 @@ function base64(bytes) {
 window.nanaSaveResult = (result, detail) => {
   busy = false;
   saveButton.disabled = false;
+  editor.inert = false;
   if (result === 'saved') {
     active.dirty = false;
     status('편집한 파일을 저장했습니다.');
@@ -348,8 +483,9 @@ async function save() {
   document.activeElement?.blur();
   busy = true;
   saveButton.disabled = true;
+  editor.inert = true;
   try {
-    const bytes = serialize();
+    const bytes = await serialize();
     if (!bytes) { window.nanaSaveResult('cancelled'); return; }
     const fallback = '편집 문서.' + active.extension;
     const name = (active.name.split('.').slice(0,-1).join('.') + ' - 편집.' + active.extension) || fallback;
@@ -369,19 +505,24 @@ async function accept(file) {
   try { await openDocument(file.name, new Uint8Array(await file.arrayBuffer())); }
   catch (error) { status('파일을 읽지 못했습니다. ' + error.message,true); }
 }
-byId('open').onclick = () => picker.click();
+function chooseFile(types = allTypes) {
+  picker.accept = types;
+  picker.click();
+}
+byId('open').onclick = () => chooseFile();
+byId('open-pdf').onclick = () => chooseFile('.pdf');
 picker.onchange = () => { const file = picker.files[0]; picker.value = ''; void accept(file); };
 byId('home-button').onclick = showHome;
 saveButton.onclick = save;
 document.querySelectorAll('[data-new]').forEach(card => card.onclick = () => {
   const ext = card.dataset.new;
-  const names = {hwpx:'새 한글 문서',xlsx:'새 스프레드시트',pptx:'새 프레젠테이션'};
+  const names = {hwpx:'새 한글 문서',xlsx:'새 스프레드시트',pptx:'새 프레젠테이션',docx:'새 워드 문서',txt:'새 텍스트 문서'};
   void openDocument(names[ext] + '.' + ext, null);
 });
 document.addEventListener('keydown', event => {
   if (!(event.ctrlKey || event.metaKey)) return;
   if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
-  if (event.key.toLowerCase() === 'o') { event.preventDefault(); picker.click(); }
+  if (event.key.toLowerCase() === 'o') { event.preventDefault(); chooseFile(); }
 });
 window.addEventListener('dragover', event => event.preventDefault());
 window.addEventListener('drop', event => { event.preventDefault(); void accept(event.dataTransfer.files[0]); });

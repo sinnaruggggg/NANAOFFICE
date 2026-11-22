@@ -1,6 +1,6 @@
 {
   "name": "nanaoffice",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Offline NANAOFFICE desktop and mobile editors",
   "main": "desktop/main.cjs",
   "scripts": {
@@ -17,6 +17,8 @@
     "electron": "45.4.1",
     "electron-builder": "26.18.0",
     "fflate": "0.8.3",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.5.438",
     "playwright": "1.65.1",
     "vite": "8.3.8"
   }

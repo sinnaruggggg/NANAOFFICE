@@ -18,6 +18,9 @@ button:disabled{opacity:.55;cursor:default}
 .card small{font-size:12px;font-weight:600;color:#4d625c}
 .symbol{width:41px;height:41px;border-radius:12px;display:grid;place-items:center;font-weight:900;font-size:18px}
 .hwp .symbol{background:#dde9fd;color:#224e92}.cell .symbol{background:#dcefe4;color:#206645}.slide .symbol{background:#f8e3d4;color:#994a23}
+.pdf .symbol{background:#f8e1e2;color:#9a2b3a;font-size:13px}
+.word .symbol{background:#dce7fc;color:#2456a0}
+.text .symbol{background:#ece4fa;color:#674186}
 .bar,.controls{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:14px}
 .controls input[type=number]{max-width:90px;min-height:40px;margin-left:4px;border:1px solid #bfcfc4;border-radius:8px;padding:6px}
 .bar h1{font-size:17px;flex:1;margin:0;min-width:128px;overflow-wrap:anywhere}
@@ -29,6 +32,9 @@ button:disabled{opacity:.55;cursor:default}
 .grid{border-collapse:collapse;min-width:100%;background:#fff}
 .grid th,.grid td{border:1px solid #dde6dd;padding:0;text-align:center}
 .grid th{background:#e9f1e8;min-width:40px;padding:5px;font-size:13px}
+.grid thead th{position:sticky;top:0;z-index:2}
+.grid th:first-child{position:sticky;left:0;z-index:1}
+.grid thead th:first-child{z-index:3}
 .grid input{width:110px;min-height:38px;border:0;padding:6px;background:transparent;color:#161d1a}
 .grid input[readonly]{background:#f0f4ee;color:#466056}
 textarea{width:100%;display:block;min-height:64px;resize:vertical;border:1px solid #bbcfc3;border-radius:8px;padding:9px;color:#172d2b;background:#fff}
@@ -39,4 +45,51 @@ textarea{width:100%;display:block;min-height:64px;resize:vertical;border:1px sol
 #status{font-size:14px;color:#275448;overflow-wrap:anywhere}
 #status.error{color:#a52d27}
 .note{font-size:13px;color:#4d625c;margin:0 0 12px;line-height:1.5}
-@media(max-width:620px){main{padding:18px 14px}.top{padding:9px 14px}.cards{grid-template-columns:1fr;gap:10px}.card{min-height:80px;grid-template-columns:42px 1fr;gap:3px 13px;align-items:center;padding:12px 14px}.symbol{grid-row:span 2}.card strong{align-self:end}.card small{align-self:start}.split{grid-template-columns:1fr}.preview{max-height:47vh}.fields{max-height:none}}
+.hwp-switcher{display:none}
+.plain-textarea{min-height:55vh;font-family:"Cascadia Mono",Consolas,monospace;line-height:1.55}
+.pdf-tools .page-count{min-width:54px;text-align:center;font-variant-numeric:tabular-nums}
+.pdf-stage{position:relative;max-width:900px;margin:0 auto 20px;background:#fff;border:1px solid #d9e2d8}
+.pdf-stage canvas{display:block;width:100%;height:auto}
+.pdf-stage.placing{cursor:crosshair}
+.pdf-memos{position:absolute;inset:0;pointer-events:none}
+.pdf-compose{margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px}
+.pdf-compose textarea{flex-basis:100%}
+@media(max-width:620px){
+  main{padding:16px 14px 42px}
+  .top{padding:9px 14px}
+  .brand{font-size:15px;gap:7px}
+  .brand img{width:33px;height:33px}
+  .editing .top{display:none}
+  #home{padding:13px 0 0}
+  h1{margin-bottom:16px}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .card{min-height:105px;border-radius:13px;gap:6px;padding:12px 11px}
+  .card strong{font-size:15px;letter-spacing:-.035em}
+  .card small{font-size:11px;line-height:1.45}
+  .symbol{width:34px;height:34px;border-radius:9px}
+  .bar{
+    display:grid;grid-template-columns:1fr 1fr;
+    position:sticky;top:0;z-index:4;
+    margin:-16px -14px 14px;padding:10px 14px 8px;
+    gap:7px;background:#f6f7f2;border-bottom:1px solid #d9e2d8;
+  }
+  .bar h1{grid-row:1;grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:16px}
+  .bar button{padding:7px 8px;font-size:14px}
+  .panel{padding:11px}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .hwp-switcher{display:grid;grid-template-columns:1fr 1fr}
+  .hwp-switcher [aria-pressed=true]{background:#dcece2;border-color:#9bbbb0}
+  .hwp-workspace[data-panel=text] .preview,.hwp-workspace[data-panel=preview] .panel:not(.preview){display:none}
+  .preview,.fields{max-height:none}
+  .sheet-wrap{max-height:62vh;max-width:100%}
+  textarea,.grid input{font-size:16px}
+  .grid input{min-height:44px}
+  .controls{gap:7px}
+  .pdf-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .pdf-tools button{font-size:13px;padding:6px 5px}
+  #status:not(:empty){
+    position:fixed;bottom:8px;left:14px;right:14px;z-index:5;
+    pointer-events:none;margin:0;padding:9px 11px;background:#e6f0e7;border:1px solid #c5d8c9;border-radius:9px;
+  }
+  #status.error{background:#fff2f2;border-color:#e2c8c7}
+}

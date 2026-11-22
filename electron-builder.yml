@@ -15,7 +15,7 @@ win:
       arch: [x64]
   icon: branding/icon.ico
   fileAssociations:
-    - ext: [hwp, hwpx, xlsx, pptx]
+    - ext: [hwp, hwpx, xlsx, pptx, pdf, docx, csv, tsv, txt, md]
       role: Editor
       name: NANAOFFICE 문서
       icon: branding/icon.ico

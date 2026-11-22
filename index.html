@@ -1,14 +1,17 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'">
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob:; style-src 'self'; font-src 'self' data: blob:; img-src 'self' blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'">
 <title>NANAOFFICE</title><link rel="icon" href="./icon.png"></head><body>
 <header class="top"><div class="brand"><img src="./icon.png" width="38" height="38" alt=""><span>NANAOFFICE</span></div><button id="open" type="button">파일 열기</button></header>
 <main>
 <section id="home"><h1>무엇을 편집할까요?</h1>
 <div class="cards">
 <button class="card hwp" data-new="hwpx"><span class="symbol">한</span><strong>한글 문서</strong><small>HWP · HWPX</small></button>
-<button class="card cell" data-new="xlsx"><span class="symbol">X</span><strong>스프레드시트</strong><small>XLSX</small></button>
+<button class="card pdf" id="open-pdf"><span class="symbol">PDF</span><strong>PDF 열기</strong><small>읽기 · 메모</small></button>
+<button class="card word" data-new="docx"><span class="symbol">W</span><strong>워드 문서</strong><small>DOCX</small></button>
+<button class="card cell" data-new="xlsx"><span class="symbol">X</span><strong>스프레드시트</strong><small>XLSX · CSV · TSV</small></button>
 <button class="card slide" data-new="pptx"><span class="symbol">P</span><strong>프레젠테이션</strong><small>PPTX</small></button>
+<button class="card text" data-new="txt"><span class="symbol">T</span><strong>텍스트 문서</strong><small>TXT · MD</small></button>
 </div>
 <button id="advanced" hidden>ONLYOFFICE에서 열기</button>
 </section>
@@ -17,5 +20,5 @@
 <div id="editor"></div>
 </section>
 <p id="status" role="status" aria-live="polite"></p>
-<input id="picker" type="file" accept=".hwp,.hwpx,.pptx,.xlsx" hidden>
+<input id="picker" type="file" accept=".hwp,.hwpx,.pptx,.xlsx,.pdf,.docx,.csv,.tsv,.txt,.md" hidden>
 </main><script type="module" src="/src/app.js"></script></body></html>
