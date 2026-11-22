@@ -1,0 +1,31 @@
+appId: com.sinnaruggggg.nanaoffice
+productName: NANAOFFICE
+npmRebuild: false
+artifactName: NANAOFFICE-Setup-${version}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - desktop/**
+  - dist/**
+  - package.json
+  - "!node_modules/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: branding/icon.ico
+  fileAssociations:
+    - ext: [hwp, hwpx, xlsx, pptx]
+      role: Editor
+      name: NANAOFFICE 문서
+      icon: branding/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: NANAOFFICE
+  installerIcon: branding/icon.ico
+  uninstallerIcon: branding/icon.ico
+  installerLanguages: [ko_KR, en_US]
+  language: "1042"

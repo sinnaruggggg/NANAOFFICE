@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'">
+<title>NANAOFFICE</title><link rel="icon" href="./icon.png"></head><body>
+<header class="top"><div class="brand"><img src="./icon.png" width="38" height="38" alt=""><span>NANAOFFICE</span></div><button id="open" type="button">파일 열기</button></header>
+<main>
+<section id="home"><h1>무엇을 편집할까요?</h1>
+<div class="cards">
+<button class="card hwp" data-new="hwpx"><span class="symbol">한</span><strong>한글 문서</strong><small>HWP · HWPX</small></button>
+<button class="card cell" data-new="xlsx"><span class="symbol">X</span><strong>스프레드시트</strong><small>XLSX</small></button>
+<button class="card slide" data-new="pptx"><span class="symbol">P</span><strong>프레젠테이션</strong><small>PPTX</small></button>
+</div>
+<button id="advanced" hidden>ONLYOFFICE에서 열기</button>
+</section>
+<section id="workspace" hidden>
+<div class="bar"><button id="home-button">처음으로</button><h1 id="filename"></h1><button id="save" class="primary">다른 이름으로 저장</button></div>
+<div id="editor"></div>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+<input id="picker" type="file" accept=".hwp,.hwpx,.pptx,.xlsx" hidden>
+</main><script type="module" src="/src/app.js"></script></body></html>

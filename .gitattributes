@@ -1,0 +1,7 @@
+* text=auto
+*.png binary
+*.ico binary
+*.xlsx binary
+*.pptx binary
+*.pdf binary
+public/licenses/** -text
