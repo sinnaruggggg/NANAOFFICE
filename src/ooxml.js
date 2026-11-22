@@ -15,7 +15,7 @@ function children(node, name) {
 function elements(node, ns, name) {
   return Array.from(node.getElementsByTagNameNS(ns, name));
 }
-function readXml(files, path) {
+export function readXml(files, path) {
   const data = files[path];
   if (!data) throw Error('문서 요소를 찾을 수 없습니다.');
   const encoding = data[0] === 255 && data[1] === 254 ? 'utf-16le' :
@@ -48,15 +48,18 @@ function parts(files, key, tag, rootPath, relationshipPath) {
     }),
   };
 }
-export function openOffice(bytes, extension) {
+export function unzipDocument(bytes) {
   let total = 0;
   let count = 0;
-  const files = unzipSync(bytes, { filter(file) {
+  return unzipSync(bytes, { filter(file) {
     total += file.originalSize;
     if (++count > 12000 || total > 192 * 1024 * 1024) throw Error('압축을 푼 문서가 너무 큽니다.');
     if (file.name.split('/').some(part => part === '..') || file.name.startsWith('/')) throw Error('잘못된 압축 파일 경로입니다.');
     return true;
   }});
+}
+export function openOffice(bytes, extension) {
+  const files = unzipDocument(bytes);
   const structure = extension === 'xlsx'
     ? parts(files, 'xl/', 'sheet', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels')
     : parts(files, 'ppt/', 'sldId', 'ppt/presentation.xml', 'ppt/_rels/presentation.xml.rels');

@@ -1,5 +1,6 @@
 import './style.css';
 import { FILE_LIMIT, openOffice, columnName, sheetCells, slideFields } from './ooxml.js';
+import { patchableHwpx, textDelta } from './hwpx.js';
 
 const byId = id => document.getElementById(id);
 const home = byId('home');
@@ -179,16 +180,12 @@ async function openHwp(bytes) {
   return bytes ? new hwpEngine.HwpDocument(bytes) : hwpEngine.HwpDocument.createEmpty();
 }
 function changeText(doc, sec, para, oldValue, value) {
-  const before = Array.from(oldValue), after = Array.from(value);
-  let start = 0, end = 0;
-  while (start < before.length && start < after.length && before[start] === after[start]) start++;
-  while (end < before.length - start && end < after.length - start && before[before.length - end - 1] === after[after.length - end - 1]) end++;
-  const removed = before.length - start - end;
-  const inserted = after.slice(start, after.length - end).join('');
+  const { start, end, inserted } = textDelta(oldValue, value);
+  const removed = end - start;
   if (removed) doc.deleteText(sec, para, start, removed);
   if (inserted) doc.insertText(sec, para, start, inserted);
 }
-function renderHwp(doc) {
+function renderHwp(doc, hwpx) {
   const split = el('div', undefined, 'split');
   const page = el('div', undefined, 'panel preview');
   const pageBar = el('div', undefined, 'controls');
@@ -219,7 +216,8 @@ function renderHwp(doc) {
       const layoutControls = rootControls.filter(control => control.para === para);
       const layoutOnly = selectedSection === 0 && positions.length === layoutControls.length &&
         layoutControls.every(control => ['secd','cold'].includes(control.ctrlId));
-      const editable = (positions.length === 0 || layoutOnly) && Array.from(value).length === length;
+      const editable = (positions.length === 0 || layoutOnly) && Array.from(value).length === length &&
+        (!hwpx || hwpx.canEdit(selectedSection, para, value));
       const label = field('본문 문단 ' + (para + 1) + (editable ? '' : ' · 읽기 전용'), value, null);
       if (editable) {
         const input = label.querySelector('textarea');
@@ -229,6 +227,7 @@ function renderHwp(doc) {
             const next = input.value.replace(/[\r\n]+/g,' ');
             if (next !== value) {
               changeText(doc, selectedSection, para, value, next);
+              hwpx?.update(selectedSection, para, value, next);
               value = next;
               edit();
               refresh();
@@ -253,7 +252,8 @@ function renderHwp(doc) {
     edit(); refresh(); jump();
     paragraphs.lastElementChild?.querySelector('textarea')?.focus();
   });
-  paragraphBar.append(previous, next, add);
+  paragraphBar.append(previous, next);
+  if (!hwpx) paragraphBar.append(add);
   function pageParagraphs() {
     previous.disabled = first === 0;
     next.disabled = first + 30 >= doc.getParagraphCount(section);
@@ -280,7 +280,13 @@ async function openDocument(name, bytes) {
   busy = true;
   status('파일을 여는 중…');
   try {
-    if (extension === 'hwp' || extension === 'hwpx') next = { name, extension, doc: await openHwp(bytes), original: bytes };
+    if (extension === 'hwp' || extension === 'hwpx') {
+      next = { name, extension, doc: await openHwp(bytes), original: bytes };
+      if (extension === 'hwpx' && bytes) {
+        next.hwpx = patchableHwpx(bytes, next.doc.getSectionCount());
+        if (!next.hwpx) throw Error('지원하는 HWPX 섹션 구성을 찾지 못했습니다.');
+      }
+    }
     else {
       const input = bytes || new Uint8Array(await (await fetch('./blank.' + extension)).arrayBuffer());
       next = {name, extension, office: openOffice(input, extension), original: input};
@@ -288,7 +294,7 @@ async function openDocument(name, bytes) {
     editor.replaceChildren();
     removePreview();
     active = next;
-    if (next.doc) renderHwp(next.doc);
+    if (next.doc) renderHwp(next.doc, next.hwpx);
     else if (extension === 'xlsx') renderWorkbook(next.office);
     else renderSlides(next.office);
     byId('filename').textContent = name;
@@ -301,7 +307,7 @@ async function openDocument(name, bytes) {
     active = previous;
     if (next && previous) {
       editor.replaceChildren();
-      if (previous.doc) renderHwp(previous.doc);
+      if (previous.doc) renderHwp(previous.doc, previous.hwpx);
       else if (previous.extension === 'xlsx') renderWorkbook(previous.office);
       else renderSlides(previous.office);
     }
@@ -311,6 +317,7 @@ async function openDocument(name, bytes) {
 function serialize() {
   if (!active.dirty && active.original) return active.original;
   if (active.office) return active.office.serialize();
+  if (active.hwpx) return active.hwpx.serialize();
   const result = active.extension === 'hwp' ? active.doc.exportHwpWithReport() : active.doc.exportHwpxWithReport();
   try {
     if (!result.hasBytes()) throw Error('이 문서를 안전하게 저장할 수 없습니다.');
