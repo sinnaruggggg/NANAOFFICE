@@ -4,7 +4,7 @@ HWP·HWPX, XLSX, PPTX 파일을 인터넷 연결 없이 열고 편집할 수 있
 
 ## 설치
 
-- **Windows 10/11 x64**에서 [GitHub Releases](../../releases)의 `NANAOFFICE-Setup-…-x64.exe`를 실행합니다.
+- **Windows 10/11 x64**에서 [GitHub Releases](../../releases)의 `NANAOFFICE-Setup-…-x64.msi`를 실행합니다.
 - **Android 9 이상**에 같은 릴리스의 `NANAOFFICE-…-android.apk`를 설치합니다. 기기 설정에서 APK를 연 앱에 설치를 허용하라는 안내가 표시될 수 있습니다. 최신 Android System WebView를 권장합니다.
 
 ## 파일 작업

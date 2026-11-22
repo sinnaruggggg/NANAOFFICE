@@ -1,0 +1,46 @@
+name: Build packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NANAOFFICE-windows
+          path: release/*.msi
+          if-no-files-found: error
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - run: npm ci
+      - run: npm run build
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - run: gradle -p android :app:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NANAOFFICE-android-unsigned
+          path: android/app/build/outputs/apk/release/*-unsigned.apk
+          if-no-files-found: error

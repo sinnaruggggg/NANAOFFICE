@@ -11,7 +11,7 @@ files:
   - "!node_modules/**"
 win:
   target:
-    - target: nsis
+    - target: msi
       arch: [x64]
   icon: branding/icon.ico
   fileAssociations:
@@ -19,13 +19,9 @@ win:
       role: Editor
       name: NANAOFFICE 문서
       icon: branding/icon.ico
-nsis:
+msi:
   oneClick: false
   perMachine: false
-  allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: NANAOFFICE
-  installerIcon: branding/icon.ico
-  uninstallerIcon: branding/icon.ico
-  installerLanguages: [ko_KR, en_US]
-  language: "1042"
+  runAfterFinish: false

@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "start": "electron .",
-    "build:win": "electron-builder --win nsis --x64 --publish never"
+    "build:win": "electron-builder --win msi --x64 --publish never"
   },
   "keywords": [],
   "author": "sinnaruggggg",
