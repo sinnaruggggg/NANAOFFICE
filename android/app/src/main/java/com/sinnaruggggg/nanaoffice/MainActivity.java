@@ -39,6 +39,9 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
             int lightBars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS

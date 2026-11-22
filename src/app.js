@@ -1,5 +1,5 @@
 import './style.css';
-import { FILE_LIMIT, openOffice, columnName, sheetCells, slideFields } from './ooxml.js';
+import { FILE_LIMIT, openOffice, columnName, sheetCells } from './ooxml.js';
 import { patchableHwpx, textDelta } from './hwpx.js';
 import { encodeTable, encodeText, openText, readTable } from './text-files.js';
 import { openDocx } from './docx.js';
@@ -62,7 +62,8 @@ function removePreview() {
   previewURL = undefined;
 }
 function canSwitch() {
-  return !busy && (!active?.dirty || confirm('저장하지 않은 변경 사항이 있습니다. 문서를 닫을까요?'));
+  return !busy && (!(active?.dirty || active?.deck?.hasDraft?.()) ||
+    confirm('저장하지 않은 변경 사항이 있습니다. 문서를 닫을까요?'));
 }
 function showHome() {
   if (!canSwitch()) return;
@@ -173,28 +174,6 @@ function viewport(selector, change, max, initially = 0) {
   selector.append(back, count, next);
   show(page);
   return () => show(page);
-}
-
-function renderSlides(office) {
-  const controls = el('div', undefined, 'controls');
-  const panel = el('div', undefined, 'panel');
-  const fields = el('div', undefined, 'fields');
-  const note = el('p','기존 슬라이드의 텍스트를 편집합니다. 이미지와 도형은 파일에 유지됩니다.','note');
-  function show(index) {
-    const part = office.parts[index];
-    const nodes = slideFields(part);
-    fields.replaceChildren(...nodes.map((node, position) => field('텍스트 ' + (position + 1), node.textContent, value => {
-      node.textContent = value;
-      if (/^\s|\s$/.test(value)) node.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');
-      office.modified(part);
-      edit();
-    })));
-    if (!nodes.length) fields.append(el('p', '이 슬라이드에 편집할 텍스트가 없습니다.'));
-  }
-  controls.append(choose(office.parts.map(part => part.name), '슬라이드', show));
-  panel.append(note, fields);
-  editor.append(controls, panel);
-  show(0);
 }
 
 function renderWorkbook(office) {
@@ -368,12 +347,15 @@ function renderDocument(file) {
     file.unmount = file.pdfModule.renderPdf(editor,file.pdf,{
       el,button,status,changed:dirty => { file.dirty = dirty; },
     });
+  } else if (file.deck) {
+    file.unmount = file.slideModule.renderSlides(editor,file.deck,{
+      el,button,status,changed:() => { file.dirty = true; },
+    });
   } else if (file.doc) renderHwp(file.doc,file.hwpx);
   else if (file.word) renderWord(file.word);
   else if (file.table) renderTable(file.table);
   else if (file.text) renderPlain(file);
-  else if (file.extension === 'xlsx') renderWorkbook(file.office);
-  else renderSlides(file.office);
+  else renderWorkbook(file.office);
 }
 
 async function openDocument(name, bytes) {
@@ -403,6 +385,10 @@ async function openDocument(name, bytes) {
       const pdfModule = await import('./pdf.js');
       const pdf = await pdfModule.openPdf(bytes);
       next = {name,extension,pdf,pdfModule,original:bytes};
+    } else if (extension === 'pptx') {
+      const slideModule = await import('./slides.js');
+      const input = bytes || new Uint8Array(await (await fetch('./blank.pptx')).arrayBuffer());
+      next = {name,extension,deck:await slideModule.openSlides(input),slideModule,original:input};
     } else if (extension === 'docx') {
       const input = bytes || new Uint8Array(await (await fetch('./blank.docx')).arrayBuffer());
       next = {name,extension,word:openDocx(input),original:input};
@@ -413,7 +399,7 @@ async function openDocument(name, bytes) {
         {name,extension,text,original:bytes};
     } else {
       const input = bytes || new Uint8Array(await (await fetch('./blank.' + extension)).arrayBuffer());
-      next = {name, extension, office: openOffice(input, extension), original: input};
+      next = {name, extension, office: openOffice(input), original: input};
     }
     previous?.unmount?.();
     editor.replaceChildren();
@@ -452,6 +438,7 @@ function serialize() {
   if (active.table) return encodeTable(active.table);
   if (active.text) return encodeText(active.text,active.text.value);
   if (active.pdf) return active.pdfModule.savePdf(active.pdf,active.original);
+  if (active.deck) return active.slideModule.saveSlides(active.deck);
   const result = active.extension === 'hwp' ? active.doc.exportHwpWithReport() : active.doc.exportHwpxWithReport();
   try {
     if (!result.hasBytes()) throw Error('이 문서를 안전하게 저장할 수 없습니다.');
@@ -485,6 +472,7 @@ async function save() {
   saveButton.disabled = true;
   editor.inert = true;
   try {
+    await active.deck?.flush?.();
     const bytes = await serialize();
     if (!bytes) { window.nanaSaveResult('cancelled'); return; }
     const fallback = '편집 문서.' + active.extension;
@@ -527,7 +515,7 @@ document.addEventListener('keydown', event => {
 window.addEventListener('dragover', event => event.preventDefault());
 window.addEventListener('drop', event => { event.preventDefault(); void accept(event.dataTransfer.files[0]); });
 window.addEventListener('beforeunload', event => {
-  if (active?.dirty) { event.preventDefault(); event.returnValue = ''; }
+  if (active?.dirty || active?.deck?.hasDraft?.()) { event.preventDefault(); event.returnValue = ''; }
 });
 if (window.nanaDesktop) {
   const advanced = byId('advanced');

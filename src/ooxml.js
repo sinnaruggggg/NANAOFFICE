@@ -4,7 +4,6 @@ const utf8 = new TextEncoder();
 const parser = new DOMParser();
 const writer = new XMLSerializer();
 const XLS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
-const DRAW = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const XML = 'http://www.w3.org/XML/1998/namespace';
 export const FILE_LIMIT = 48 * 1024 * 1024;
@@ -58,12 +57,10 @@ export function unzipDocument(bytes) {
     return true;
   }});
 }
-export function openOffice(bytes, extension) {
+export function openOffice(bytes) {
   const files = unzipDocument(bytes);
-  const structure = extension === 'xlsx'
-    ? parts(files, 'xl/', 'sheet', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels')
-    : parts(files, 'ppt/', 'sldId', 'ppt/presentation.xml', 'ppt/_rels/presentation.xml.rels');
-  if (!structure.list.length) throw Error('편집할 시트 또는 슬라이드가 없습니다.');
+  const structure = parts(files, 'xl/', 'sheet', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels');
+  if (!structure.list.length) throw Error('편집할 시트가 없습니다.');
   const strings = files['xl/sharedStrings.xml']
     ? elements(readXml(files, 'xl/sharedStrings.xml'), XLS, 'si')
       .map(entry => elements(entry, XLS, 't').map(item => item.textContent).join(''))
@@ -74,7 +71,7 @@ export function openOffice(bytes, extension) {
     modified(part) { changed.add(part); },
     serialize() {
       for (const part of changed) files[part.path] = utf8.encode(writer.serializeToString(part.xml.documentElement));
-      if (extension === 'xlsx' && changed.size) {
+      if (changed.size) {
         const root = structure.root.documentElement;
         let calc = children(root, 'calcPr')[0];
         if (calc) {
@@ -85,10 +82,6 @@ export function openOffice(bytes, extension) {
       return zipSync(files, { level: 3 });
     },
   };
-}
-
-export function slideFields(part) {
-  return elements(part.xml, DRAW, 't').filter(node => node.parentElement.localName === 'r');
 }
 
 export function columnName(index) {
