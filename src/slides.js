@@ -48,6 +48,9 @@ function objects(presentation, slide) {
 export function renderSlides(parent, model, {el,button,status,changed}) {
   const wrap = el('section',undefined,'slide-editor');
   const stageBox = el('div',undefined,'slide-stage-box');
+  const viewport = el('div',undefined,'slide-viewport');
+  viewport.tabIndex = 0;
+  viewport.setAttribute('aria-label','슬라이드 캔버스');
   const stage = el('div',undefined,'slide-stage');
   const artwork = el('img',undefined,'slide-artwork');
   const overlay = el('div',undefined,'slide-shapes');
@@ -60,20 +63,23 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   const insertTools = el('div',undefined,'slide-tools');
   const slideTools = el('div',undefined,'slide-tools');
   const editPane = el('div',undefined,'panel slide-text-panel');
+  const inlineText = el('div',undefined,'slide-inline-text');
   const editInput = el('textarea');
   editInput.setAttribute('aria-label','선택한 개체의 텍스트');
   editInput.rows = 3;
   editPane.hidden = true;
-  editPane.append(el('label','텍스트 편집','slide-field-label'),editInput);
+  inlineText.append(editInput);
+  inlineText.hidden = true;
   thumbs.setAttribute('aria-label','슬라이드 썸네일');
   thumbs.id = 'pptx-slide-list';
   tabs.setAttribute('role','tablist');
   tabs.setAttribute('aria-label','프레젠테이션 편집 메뉴');
   artwork.alt = '현재 슬라이드';
   artwork.draggable = false;
-  stage.append(artwork,overlay);
-  stageBox.append(canvasControls,stage);
-  wrap.append(ribbon,thumbs,stageBox,editPane);
+  stage.append(artwork,overlay,inlineText);
+  viewport.append(stage);
+  stageBox.append(canvasControls,viewport,editPane);
+  wrap.append(ribbon,thumbs,stageBox);
   parent.append(wrap);
 
   let index = 0;
@@ -86,6 +92,11 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   let previewUrl;
   let paintGeneration = 0;
   let thumbObserver;
+  let zoom = 1;
+  let gesture;
+  let draggingObject = false;
+  const desktop = Boolean(window.nanaDesktop);
+  let pcMode = desktop || localStorage.getItem('nana-ppt-mode') === 'pc';
   const thumbUrls = new Map();
   const size = getSlideSize(model.presentation) || {width:12192000,height:6858000};
   stage.style.aspectRatio = size.width + ' / ' + size.height;
@@ -98,21 +109,96 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   const next = button('다음',() => go(index+1));
   previous.setAttribute('aria-label','이전 슬라이드');
   next.setAttribute('aria-label','다음 슬라이드');
-  const expand = button('확대',() => {
-    const zoom = stageBox.classList.toggle('zoomed');
-    expand.textContent = zoom ? '화면 맞춤' : '확대';
-    expand.setAttribute('aria-pressed',String(zoom));
-  });
-  canvasControls.append(previous,slideNumber,next,expand);
+  const zoomOut = button('−',() => setZoom(zoom/1.25));
+  const fitZoom = button('맞춤',() => setZoom(1));
+  const expand = button('+',() => setZoom(zoom*1.25));
+  zoomOut.setAttribute('aria-label','슬라이드 축소');
+  expand.setAttribute('aria-label','슬라이드 확대');
+  fitZoom.setAttribute('aria-label','슬라이드 화면 맞춤');
+  const pageControls = el('div',undefined,'slide-page-controls');
+  const zoomControls = el('div',undefined,'slide-zoom-controls');
+  pageControls.append(previous,slideNumber,next);
+  zoomControls.append(zoomOut,fitZoom,expand);
+  canvasControls.append(pageControls,zoomControls);
+  function setZoom(value, x, y, anchor) {
+    const rect = viewport.getBoundingClientRect();
+    x ??= rect.width/2;
+    y ??= rect.height/2;
+    anchor ??= zoomAnchor(x,y);
+    zoom = Math.max(1,Math.min(4,value));
+    stage.style.width = zoom*100 + '%';
+    stage.style.maxWidth = 66*size.width/size.height*zoom + 'dvh';
+    fitZoom.textContent = zoom === 1 ? '맞춤' : Math.round(zoom*100)+'%';
+    zoomOut.disabled = zoom === 1;
+    expand.disabled = zoom === 4;
+    viewport.scrollLeft = stage.offsetLeft+anchor.x*zoom-x;
+    viewport.scrollTop = anchor.y*zoom-y;
+  }
+  function zoomAnchor(x,y) {
+    return {x:(viewport.scrollLeft+x-stage.offsetLeft)/zoom,y:(viewport.scrollTop+y)/zoom};
+  }
+  viewport.addEventListener('wheel',event => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    setZoom(zoom*(event.deltaY < 0 ? 1.15 : 1/1.15),event.clientX-rect.left,event.clientY-rect.top);
+  },{passive:false});
+  function touchPair(touches) {
+    const [a,b] = touches;
+    const rect = viewport.getBoundingClientRect();
+    return {x:(a.clientX+b.clientX)/2-rect.left,y:(a.clientY+b.clientY)/2-rect.top,
+      span:Math.max(1,Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY))};
+  }
+  viewport.addEventListener('touchstart',event => {
+    if (event.target.closest('textarea')) return;
+    if (event.touches.length === 2) {
+      const {x,y,span} = touchPair(event.touches);
+      gesture = {span,zoom,anchor:zoomAnchor(x,y)};
+    } else if (event.touches.length === 1 && zoom > 1 &&
+        !event.target.closest('.slide-object[aria-pressed=true],.slide-resize-handle')) {
+      const {clientX,clientY} = event.touches[0];
+      gesture = {clientX,clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
+    }
+  },{passive:true});
+  viewport.addEventListener('touchmove',event => {
+    if (!gesture) return;
+    event.preventDefault();
+    if (gesture.span && event.touches.length === 2) {
+      const {x,y,span} = touchPair(event.touches);
+      setZoom(gesture.zoom*span/gesture.span,x,y,gesture.anchor);
+    } else if (!gesture.span && event.touches.length === 1) {
+      const {clientX,clientY} = event.touches[0];
+      viewport.scrollLeft = gesture.left+gesture.clientX-clientX;
+      viewport.scrollTop = gesture.top+gesture.clientY-clientY;
+    }
+  },{passive:false});
+  const endGesture = event => {
+    if (!event.touches.length) requestAnimationFrame(() => {
+      if (!draggingObject) gesture = undefined;
+    });
+  };
+  viewport.addEventListener('touchend',endGesture);
+  viewport.addEventListener('touchcancel',endGesture);
 
   const changeText = button('텍스트 편집', showText);
   changeText.dataset.action = 'edit-text';
-  const sidebar = button('목록 접기',() => {
-    const collapsed = wrap.classList.toggle('thumbs-collapsed');
+  const sidebar = button('목록 접기',() => setSidebar(!wrap.classList.contains('thumbs-collapsed')));
+  function setSidebar(collapsed) {
+    wrap.classList.toggle('thumbs-collapsed',collapsed);
     sidebar.textContent = collapsed ? '목록 펼치기' : '목록 접기';
     sidebar.setAttribute('aria-expanded',String(!collapsed));
-    if (!collapsed) thumbs.children[index]?.scrollIntoView({block:'nearest'});
+  }
+  const mode = button('PC 모드',() => {
+    pcMode = !pcMode;
+    localStorage.setItem('nana-ppt-mode',pcMode ? 'pc' : 'touch');
+    updateMode();
   });
+  mode.hidden = desktop;
+  function updateMode() {
+    wrap.classList.toggle('pc-mode',pcMode);
+    mode.textContent = pcMode ? '터치 모드' : 'PC 모드';
+    setSidebar(!pcMode);
+  }
   sidebar.setAttribute('aria-expanded','true');
   sidebar.setAttribute('aria-controls',thumbs.id);
   const setDragMode = mode => {
@@ -123,8 +209,10 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   };
   const dragging = button('이동',() => setDragMode('move'));
   const resize = button('크기 조절',() => setDragMode('resize'));
+  dragging.dataset.transform = 'move';
+  resize.dataset.transform = 'resize';
   const remove = button('개체 삭제',() => {
-    if (!selectedTarget || !confirm('선택한 개체를 삭제할까요?')) return;
+    if (!selectedTarget || isShapeLocked(selectedTarget.shape) || !confirm('선택한 개체를 삭제할까요?')) return;
     void change(() => { removeShape(selectedTarget.shape); selectedId = undefined; });
   });
   const addText = button('텍스트 상자',async () => {
@@ -222,9 +310,13 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       (current + direction + menu.length) % menu.length;
     selectTab(menu[next].key,true);
   });
-  ribbonTop.append(tabs,sidebar);
+  const ribbonActions = el('div',undefined,'slide-ribbon-actions');
+  ribbonActions.append(sidebar,mode);
+  ribbonTop.append(tabs,ribbonActions);
   ribbon.append(ribbonTop,homeTools,insertTools,slideTools);
   selectTab('home');
+  updateMode();
+  setZoom(1);
 
   const editActions = el('div',undefined,'slide-text-actions');
   const apply = button('적용',() => flush().catch(error => status(error.message,true)));
@@ -261,13 +353,16 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
     editInput.value = originalText;
     bold.value = ''; pointSize.value = '';
     editPane.hidden = false;
+    inlineText.hidden = false;
+    place(inlineText,selectedTarget.bounds,getShapeRotation(editShape));
     wrap.classList.add('editing-slide-text');
     editInput.focus({preventScroll:true});
-    editPane.scrollIntoView({block:'nearest'});
+    inlineText.scrollIntoView({block:'nearest',inline:'nearest'});
   }
   function hideText() {
     editShape = undefined;
     editPane.hidden = true;
+    inlineText.hidden = true;
     wrap.classList.remove('editing-slide-text');
     editInput.value = '';
     bold.value = ''; pointSize.value = '';
@@ -421,23 +516,37 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       frame.setAttribute('aria-pressed',String(selected));
       frame.title = name;
       place(frame,target.bounds,getShapeRotation(target.shape));
-      if (selected && target.movable) attachDrag(frame,target);
       overlay.append(frame);
+      if (selected && target.movable) {
+        const handles = el('div',undefined,'slide-selection-handles');
+        const grip = el('span',undefined,'slide-resize-handle');
+        grip.setAttribute('aria-hidden','true');
+        handles.append(grip);
+        place(handles,target.bounds,getShapeRotation(target.shape));
+        overlay.append(handles);
+        attachDrag(frame,frame,handles,target);
+        attachDrag(grip,frame,handles,target,'resize');
+      }
     }
+    updateTools();
   }
-  function attachDrag(frame,target) {
-    frame.addEventListener('pointerdown',start => {
-      if (!dragMode || pending || start.button !== 0) return;
-      start.preventDefault();
-      frame.setPointerCapture(start.pointerId);
+  function attachDrag(control,frame,handles,target,forcedMode) {
+    control.addEventListener('pointerdown',start => {
+      if (pending || editShape || start.button !== 0 || !start.isPrimary) return;
+      control.setPointerCapture(start.pointerId);
       const rect = stage.getBoundingClientRect();
       const origin = target.bounds;
-      const mode = dragMode;
+      const mode = forcedMode || dragMode || 'move';
+      const rotation = getShapeRotation(target.shape);
       let current;
       const onMove = event => {
-        if (event.pointerId !== start.pointerId) return;
-        const dx = (event.clientX-start.clientX)*size.width/rect.width;
-        const dy = (event.clientY-start.clientY)*size.height/rect.height;
+        if (event.pointerId !== start.pointerId || gesture?.span) return;
+        const px = event.clientX-start.clientX;
+        const py = event.clientY-start.clientY;
+        if (!current && Math.hypot(px,py) < 5) return;
+        draggingObject = true;
+        const dx = px*size.width/rect.width;
+        const dy = py*size.height/rect.height;
         if (mode === 'move') {
           current = {...origin,
             x:Math.max(-origin.w*.9,Math.min(size.width*.98,origin.x+dx)),
@@ -451,25 +560,82 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
             current = {...origin,w:origin.w*factor,h:origin.h*factor};
           } else current = {...origin,w,h};
         }
-        place(frame,current,getShapeRotation(target.shape));
+        place(frame,current,rotation);
+        place(handles,current,rotation);
       };
       const end = event => {
         if (event.pointerId !== start.pointerId) return;
-        frame.removeEventListener('pointermove',onMove);
-        frame.removeEventListener('pointerup',end);
-        frame.removeEventListener('pointercancel',end);
-        if (event.type === 'pointerup' && current && current !== origin) {
+        control.removeEventListener('pointermove',onMove);
+        control.removeEventListener('pointerup',end);
+        control.removeEventListener('pointercancel',end);
+        draggingObject = false;
+        if (event.type === 'pointerup' && current && !gesture?.span) {
           dragMode = '';
           void change(() => setShapeBounds(target.shape,{
             x:emu(current.x),y:emu(current.y),w:emu(current.w),h:emu(current.h),
           }));
-        } else place(frame,origin,getShapeRotation(target.shape));
+        } else {
+          place(frame,origin,rotation);
+          place(handles,origin,rotation);
+        }
       };
-      frame.addEventListener('pointermove',onMove);
-      frame.addEventListener('pointerup',end);
-      frame.addEventListener('pointercancel',end);
+      control.addEventListener('pointermove',onMove);
+      control.addEventListener('pointerup',end);
+      control.addEventListener('pointercancel',end);
     });
   }
+  stage.addEventListener('click',async event => {
+    if (pending || gesture?.span || ![stage,overlay].includes(event.target)) return;
+    try {
+      await flush();
+      selectedId = undefined;
+      selectedTarget = undefined;
+      handles(objects(model.presentation,currentSlide()));
+    } catch (error) { status(error.message,true); }
+  });
+  function keyboard(event) {
+    if (event.defaultPrevented || event.isComposing || !wrap.isConnected || pending) return;
+    const key = event.key;
+    const ctrl = event.ctrlKey || event.metaKey;
+    if (ctrl && key.toLowerCase() === 's') {
+      event.preventDefault();
+      document.querySelector('#save')?.click();
+      return;
+    }
+    if (editShape && (key === 'Escape' || ctrl && key === 'Enter')) {
+      event.preventDefault();
+      if (key === 'Escape') hideText();
+      else void flush().catch(error => status(error.message,true));
+      viewport.focus({preventScroll:true});
+      return;
+    }
+    if (event.target.closest?.('textarea,input,select,[contenteditable],.slide-tabs')) return;
+    if (ctrl && key.toLowerCase() === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      void undoEdit();
+    } else if (key === 'PageUp' || key === 'PageDown') {
+      event.preventDefault();
+      void go(index+(key === 'PageUp' ? -1 : 1));
+    } else if (selectedTarget && key === 'Delete') {
+      event.preventDefault();
+      remove.click();
+    } else if (selectedTarget?.text && key === 'F2') {
+      event.preventDefault();
+      showText();
+    } else if (selectedTarget?.movable && /^Arrow(Up|Down|Left|Right)$/.test(key)) {
+      event.preventDefault();
+      if (event.repeat) return;
+      const target = selectedTarget;
+      const distance = event.shiftKey ? 127000 : 12700;
+      const {x,y,w,h} = target.bounds;
+      const dx = key === 'ArrowLeft' ? -distance : key === 'ArrowRight' ? distance : 0;
+      const dy = key === 'ArrowUp' ? -distance : key === 'ArrowDown' ? distance : 0;
+      void change(() => setShapeBounds(target.shape,{
+        x:emu(x+dx),y:emu(y+dy),w:emu(w),h:emu(h),
+      }));
+    }
+  }
+  document.addEventListener('keydown',keyboard);
   function updateTools() {
     if (!selectedTarget?.movable) dragMode = '';
     wrap.classList.toggle('moving-shape',dragMode !== '');
@@ -517,6 +683,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   repaint(true);
   return () => {
     paintGeneration++;
+    document.removeEventListener('keydown',keyboard);
     releaseThumbs();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     model.flush = undefined; model.hasDraft = undefined;

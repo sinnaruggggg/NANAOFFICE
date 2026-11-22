@@ -57,11 +57,21 @@ try {
     }
     throw Error('WebView state did not update: ' + expression + '; ' + await js('document.body.innerText'));
   }
-  async function tap(selector) {
+  async function center(selector) {
     const location = await js('(() => { const b=document.querySelector(' + JSON.stringify(selector) +
       '); if(!b)return null; b.scrollIntoView({block:"nearest"}); const r=b.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()');
     if (!location) throw Error('Missing control '+selector);
+    return location;
+  }
+  async function tap(selector) {
+    const location = await center(selector);
     await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[location]});
+    await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  }
+  async function drag(selector,dx,dy) {
+    const {x,y} = await center(selector);
+    await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+    await send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx,y:y+dy}]});
     await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   }
   function screenshot(name) {
@@ -74,15 +84,43 @@ try {
   await screenshot('nana-mobile-home.png');
   await tap('[data-new="pptx"]');
   await expect("document.querySelector('.slide-artwork')?.naturalWidth > 100 && document.querySelectorAll('.slide-object').length > 0");
+  await expect("document.querySelector('.slide-editor.thumbs-collapsed') !== null");
   await tap('.slide-object');
   await expect("document.querySelector('.slide-object[aria-pressed=true]') !== null");
-  await tap('[data-action="edit-text"]');
-  await expect("document.querySelector('.slide-text-panel')?.hidden === false");
-  await js("document.querySelector('.slide-text-panel textarea').value = '모바일 슬라이드 편집'; document.querySelector('.slide-text-panel .slide-text-actions:last-child button').click()");
+  await tap('.slide-object[aria-pressed=true]');
+  await expect("!document.querySelector('.slide-inline-text').hidden && document.activeElement.matches('.slide-inline-text textarea')");
+  await send('Input.insertText',{text:' 편집'});
+  await expect("document.querySelector('.slide-inline-text textarea').value.includes('편집')");
+  await js("document.querySelector('.slide-inline-text textarea').value = '모바일 슬라이드 편집'");
+  await tap('.slide-text-actions:last-child button');
   await expect("document.querySelector('.slide-text-panel')?.hidden && [...document.querySelectorAll('.slide-object')].some(b=>b.getAttribute('aria-label')==='모바일 슬라이드 편집')");
+  await js("window.beforeDrag = document.querySelector('.slide-object[aria-pressed=true]').style.left");
+  await drag('.slide-object[aria-pressed=true]',-16,-17);
+  await expect("document.querySelector('.slide-object[aria-pressed=true]').style.left !== window.beforeDrag");
+  await js("window.beforeResize = document.querySelector('.slide-object[aria-pressed=true]').style.width");
+  await drag('.slide-resize-handle',-21,12);
+  await expect("document.querySelector('.slide-object[aria-pressed=true]').style.width !== window.beforeResize");
+  const {x,y} = await center('.slide-stage');
+  await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:x-24,y:y+28,id:1},{x:x+24,y:y+28,id:2}]});
+  await send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-59,y:y+28,id:1},{x:x+59,y:y+28,id:2}]});
+  await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await expect("document.querySelector('.slide-viewport').scrollWidth > document.querySelector('.slide-viewport').clientWidth");
+  await tap('[aria-label="슬라이드 화면 맞춤"]');
   await expect("document.documentElement.scrollWidth === innerWidth");
   await screenshot('nana-mobile-editor.png');
-  console.log('Android WebView home, PPT canvas, touch selection, text update and viewport verified');
+  execFileSync('adb',['shell','wm','size','1600x1000']);
+  execFileSync('adb',['shell','wm','density','240']);
+  await expect('innerWidth > 850');
+  await tap('.slide-ribbon-actions button:last-child');
+  await expect("document.querySelector('.slide-editor.pc-mode:not(.thumbs-collapsed)') !== null");
+  await js("window.beforeKey = document.querySelector('.slide-object[aria-pressed=true]').style.left; document.querySelector('.slide-viewport').focus()");
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+  await expect("document.querySelector('.slide-object[aria-pressed=true]').style.left !== window.beforeKey");
+  await screenshot('nana-mobile-pc-mode.png');
+  await tap('.slide-ribbon-actions button:last-child');
+  await expect("document.querySelector('.slide-editor:not(.pc-mode).thumbs-collapsed') !== null");
+  console.log('Android touch text, drag, resize, pinch, tablet PC mode and keyboard verified');
 } finally {
   channel?.close();
   execFileSync('adb',['forward','--remove','tcp:9222']);
