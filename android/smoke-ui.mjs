@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 
 const packageName = 'com.sinnaruggggg.nanaoffice';
 const timeout = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -76,7 +77,7 @@ try {
   }
   function screenshot(name) {
     const screenshot=execFileSync('adb',['exec-out','screencap','-p'],{maxBuffer:8*1024*1024});
-    return import('node:fs/promises').then(fs=>fs.writeFile(name,screenshot));
+    return writeFile(name,screenshot);
   }
 
   await expect("!document.querySelector('#home').hidden && document.querySelector('#open-pdf').innerText.includes('PDF')");
@@ -108,8 +109,9 @@ try {
   await tap('[aria-label="슬라이드 화면 맞춤"]');
   await expect("document.documentElement.scrollWidth === innerWidth");
   await screenshot('nana-mobile-editor.png');
-  execFileSync('adb',['shell','wm','size','1600x1000']);
-  execFileSync('adb',['shell','wm','density','240']);
+  await send('Emulation.setDeviceMetricsOverride',{
+    width:1024,height:700,deviceScaleFactor:1,mobile:true,screenWidth:1024,screenHeight:700,
+  });
   await expect('innerWidth > 850');
   await tap('.slide-ribbon-actions button:last-child');
   await expect("document.querySelector('.slide-editor.pc-mode:not(.thumbs-collapsed)') !== null");
@@ -117,7 +119,8 @@ try {
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
   await expect("document.querySelector('.slide-object[aria-pressed=true]').style.left !== window.beforeKey");
-  await screenshot('nana-mobile-pc-mode.png');
+  const pc = await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile('nana-mobile-pc-mode.png',Buffer.from(pc.data,'base64'));
   await tap('.slide-ribbon-actions button:last-child');
   await expect("document.querySelector('.slide-editor:not(.pc-mode).thumbs-collapsed') !== null");
   console.log('Android touch text, drag, resize, pinch, tablet PC mode and keyboard verified');
