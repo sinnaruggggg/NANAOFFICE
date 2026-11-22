@@ -71,7 +71,7 @@ try {
   await expect("document.querySelector('.slide-artwork')?.naturalWidth > 100 && document.querySelectorAll('.slide-object').length > 0");
   await tap('.slide-object');
   await expect("document.querySelector('.slide-object[aria-pressed=true]') !== null");
-  await js("document.querySelector('.slide-tools button:nth-child(4)').click()");
+  await tap('[data-action="edit-text"]');
   await expect("document.querySelector('.slide-text-panel')?.hidden === false");
   await js("document.querySelector('.slide-text-panel textarea').value = '모바일 슬라이드 편집'; document.querySelector('.slide-text-panel .slide-text-actions:last-child button').click()");
   await expect("document.querySelector('.slide-text-panel')?.hidden && [...document.querySelectorAll('.slide-object')].some(b=>b.getAttribute('aria-label')==='모바일 슬라이드 편집')");

@@ -53,9 +53,12 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   const overlay = el('div',undefined,'slide-shapes');
   const thumbs = el('div',undefined,'slide-thumbs');
   const canvasControls = el('div',undefined,'slide-nav');
-  const tools = el('div',undefined,'slide-tools');
-  const slideActions = el('div',undefined,'slide-operations');
-  const details = el('details',undefined,'slide-actions');
+  const ribbon = el('section',undefined,'slide-ribbon');
+  const ribbonTop = el('div',undefined,'slide-ribbon-top');
+  const tabs = el('div',undefined,'slide-tabs');
+  const homeTools = el('div',undefined,'slide-tools');
+  const insertTools = el('div',undefined,'slide-tools');
+  const slideTools = el('div',undefined,'slide-tools');
   const editPane = el('div',undefined,'panel slide-text-panel');
   const editInput = el('textarea');
   editInput.setAttribute('aria-label','선택한 개체의 텍스트');
@@ -63,11 +66,14 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   editPane.hidden = true;
   editPane.append(el('label','텍스트 편집','slide-field-label'),editInput);
   thumbs.setAttribute('aria-label','슬라이드 썸네일');
+  thumbs.id = 'pptx-slide-list';
+  tabs.setAttribute('role','tablist');
+  tabs.setAttribute('aria-label','프레젠테이션 편집 메뉴');
   artwork.alt = '현재 슬라이드';
   artwork.draggable = false;
   stage.append(artwork,overlay);
   stageBox.append(canvasControls,stage);
-  wrap.append(thumbs,stageBox,tools,details,editPane);
+  wrap.append(ribbon,thumbs,stageBox,editPane);
   parent.append(wrap);
 
   let index = 0;
@@ -88,8 +94,10 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   const slideNumber = el('span',undefined,'slide-count');
   slideNumber.setAttribute('aria-live','polite');
 
-  const previous = button('이전 슬라이드',() => go(index-1));
-  const next = button('다음 슬라이드',() => go(index+1));
+  const previous = button('이전',() => go(index-1));
+  const next = button('다음',() => go(index+1));
+  previous.setAttribute('aria-label','이전 슬라이드');
+  next.setAttribute('aria-label','다음 슬라이드');
   const expand = button('확대',() => {
     const zoom = stageBox.classList.toggle('zoomed');
     expand.textContent = zoom ? '화면 맞춤' : '확대';
@@ -98,6 +106,15 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   canvasControls.append(previous,slideNumber,next,expand);
 
   const changeText = button('텍스트 편집', showText);
+  changeText.dataset.action = 'edit-text';
+  const sidebar = button('목록 접기',() => {
+    const collapsed = wrap.classList.toggle('thumbs-collapsed');
+    sidebar.textContent = collapsed ? '목록 펼치기' : '목록 접기';
+    sidebar.setAttribute('aria-expanded',String(!collapsed));
+    if (!collapsed) thumbs.children[index]?.scrollIntoView({block:'nearest'});
+  });
+  sidebar.setAttribute('aria-expanded','true');
+  sidebar.setAttribute('aria-controls',thumbs.id);
   const setDragMode = mode => {
     dragMode = dragMode === mode ? '' : mode;
     updateTools();
@@ -143,7 +160,8 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   });
   const addImage = button('이미지',() => photo.click());
   const undo = button('실행 취소',undoEdit);
-  tools.append(addText,addBox,addImage,changeText,dragging,resize,remove,undo,photo);
+  homeTools.append(changeText,dragging,resize,remove,undo);
+  insertTools.append(addText,addBox,addImage,photo);
 
   const add = button('새 슬라이드',() => change(() => {
     const layouts = getSlideLayouts(model.presentation);
@@ -170,8 +188,43 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       selectedId = undefined;
     });
   });
-  slideActions.append(add,duplicate,moveUp,moveDown,deleteSlide);
-  details.append(el('summary','슬라이드 관리'),slideActions);
+  slideTools.append(add,duplicate,moveUp,moveDown,deleteSlide);
+  const menu = [
+    {key:'home',name:'홈',panel:homeTools},
+    {key:'insert',name:'삽입',panel:insertTools},
+    {key:'slide',name:'슬라이드',panel:slideTools},
+  ];
+  function selectTab(key, focus = false) {
+    menu.forEach(item => {
+      const on = item.key === key;
+      item.panel.hidden = !on;
+      item.button.tabIndex = on ? 0 : -1;
+      item.button.setAttribute('aria-selected',String(on));
+      if (on && focus) item.button.focus();
+    });
+  }
+  for (const item of menu) {
+    item.button = button(item.name,() => selectTab(item.key));
+    item.button.id = 'pptx-tab-' + item.key;
+    item.button.setAttribute('role','tab');
+    item.button.setAttribute('aria-controls','pptx-panel-' + item.key);
+    item.panel.id = 'pptx-panel-' + item.key;
+    item.panel.setAttribute('role','tabpanel');
+    item.panel.setAttribute('aria-labelledby',item.button.id);
+    tabs.append(item.button);
+  }
+  tabs.addEventListener('keydown',event => {
+    if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = menu.findIndex(item => item.button === event.target);
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? menu.length - 1 :
+      (current + direction + menu.length) % menu.length;
+    selectTab(menu[next].key,true);
+  });
+  ribbonTop.append(tabs,sidebar);
+  ribbon.append(ribbonTop,homeTools,insertTools,slideTools);
+  selectTab('home');
 
   const editActions = el('div',undefined,'slide-text-actions');
   const apply = button('적용',() => flush().catch(error => status(error.message,true)));
@@ -203,6 +256,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
     if (!selectedTarget?.text || pending) return;
     if (editShape === selectedTarget.shape && !editPane.hidden) { editInput.focus(); return; }
     editShape = selectedTarget.shape;
+    selectTab('home');
     originalText = getShapeText(editShape);
     editInput.value = originalText;
     bold.value = ''; pointSize.value = '';
