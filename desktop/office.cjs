@@ -21,9 +21,9 @@ async function prepareOffice(local, progress) {
   if (fs.existsSync(alternate)) return alternate;
   const permission = require('electron').dialog.showMessageBoxSync({
     type:'question', buttons:['다운로드','취소'], cancelId:1,
-    title:'ONLYOFFICE Desktop Editors', message:'고급 편집에 공식 편집기 다운로드(397 MB)가 필요합니다.',
+    title:'고급 편집기 설치', message:'고급 편집에 공식 편집기 다운로드(397 MB)가 필요합니다.',
   });
-  if (permission !== 0) throw Error('다운로드를 취소했습니다.');
+  if (permission !== 0) return null;
   await fsp.mkdir(base, {recursive:true});
   const stage = path.join(base, 'staging-' + randomUUID());
   await fsp.mkdir(stage);

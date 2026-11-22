@@ -21,4 +21,9 @@
 </section>
 <p id="status" role="status" aria-live="polite"></p>
 <input id="picker" type="file" accept=".hwp,.hwpx,.pptx,.xlsx,.pdf,.docx,.csv,.tsv,.txt,.md" hidden>
-</main><script type="module" src="/src/app.js"></script></body></html>
+</main>
+<dialog id="app-confirmation" aria-label="작업 확인" aria-describedby="confirmation-message">
+<form method="dialog"><p id="confirmation-message"></p><div class="confirmation-actions">
+<button value="cancel" autofocus>취소</button><button class="primary" value="accept">확인</button>
+</div></form></dialog>
+<script type="module" src="/src/app.js"></script></body></html>

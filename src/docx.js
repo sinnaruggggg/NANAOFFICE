@@ -1,3 +1,4 @@
+import { UserError } from './ui-messages.js';
 import { zipSync } from 'fflate';
 import { readXml, unzipDocument } from './ooxml.js';
 import { textDelta } from './hwpx.js';
@@ -10,7 +11,7 @@ export function openDocx(bytes) {
   const files = unzipDocument(bytes);
   const xml = readXml(files, PATH);
   const body = xml.getElementsByTagNameNS(W, 'body')[0];
-  if (!body) throw Error('지원하는 DOCX 본문을 찾을 수 없습니다.');
+  if (!body) throw new UserError('지원하는 DOCX 본문을 찾을 수 없습니다.');
   const protectedDocument = files['word/settings.xml'] && Array.from(
     readXml(files,'word/settings.xml').getElementsByTagNameNS(W,'documentProtection'),
   ).some(item => ['on','true','1'].includes(item.getAttributeNS(W,'enforcement')));

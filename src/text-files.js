@@ -1,3 +1,4 @@
+import { UserError } from './ui-messages.js';
 const encoder = new TextEncoder();
 const BOM = '\uFEFF';
 
@@ -16,7 +17,7 @@ export function openText(bytes) {
     }
     if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) prefix = BOM;
   }
-  if (value.includes('\0')) throw Error('이 텍스트 인코딩을 읽을 수 없습니다.');
+  if (value.includes('\0')) throw new UserError('이 텍스트 인코딩을 읽을 수 없습니다.');
   return { value, prefix, eol: value.includes('\r\n') ? '\r\n' : value.includes('\r') ? '\r' : '\n' };
 }
 
@@ -35,7 +36,7 @@ export function readTable(text, extension) {
   let cells = 0;
 
   function addField() {
-    if (++cells > 300000) throw Error('표의 셀이 너무 많습니다. 30만 셀 이하의 파일을 선택하세요.');
+    if (++cells > 300000) throw new UserError('표의 셀이 너무 많습니다. 30만 셀 이하의 파일을 선택하세요.');
     row.push(field);
     field = '';
     fieldStart = true;
@@ -60,12 +61,12 @@ export function readTable(text, extension) {
       fieldStart = false;
       quoted = true;
     } else {
-      if (quotesClosed) throw Error('표의 따옴표 사용 형식을 확인하세요.');
+      if (quotesClosed) throw new UserError('표의 따옴표 사용 형식을 확인하세요.');
       fieldStart = false;
       field += char;
     }
   }
-  if (quoted) throw Error('표에 닫는 따옴표가 빠져 있습니다.');
+  if (quoted) throw new UserError('표에 닫는 따옴표가 빠져 있습니다.');
   const trailing = /[\r\n]$/.test(text.value);
   if (!trailing || !rows.length) endRow();
   return { rows, delimiter, trailing, text };

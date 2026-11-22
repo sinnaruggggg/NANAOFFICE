@@ -4,7 +4,7 @@
 
 ## 설치
 
-- **Windows 10/11 x64**에서 [GitHub Releases](../../releases)의 `NANAOFFICE-Setup-…-x64.msi`를 실행합니다.
+- **Windows 10/11 x64**에서 [GitHub Releases](../../releases)의 `NANAOFFICE-Setup-…-x64.msi`를 실행합니다. 설치 마법사와 편집 화면은 한국어로 표시됩니다. Windows가 제공하는 파일 선택 창의 시스템 항목은 Windows 표시 언어를 따릅니다.
 - **Android 9 이상**에 같은 릴리스의 `NANAOFFICE-…-android.apk`를 설치합니다. 기기 설정에서 APK를 연 앱에 설치를 허용하라는 안내가 표시될 수 있습니다. 최신 Android System WebView를 권장합니다.
 
 ## 파일 작업

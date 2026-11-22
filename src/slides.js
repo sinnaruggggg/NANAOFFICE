@@ -7,6 +7,7 @@ import {
 } from '@office-kit/pptx';
 import { renderSlideToSvg } from '@office-kit/pptx-preview';
 import { createSlideShow } from './slide-show.js';
+import { confirmAction, UserError, userMessage } from './ui-messages.js';
 import './slides.css';
 
 const MiB = 1024 * 1024;
@@ -15,7 +16,7 @@ const presentationOptions = { limits };
 
 export async function openSlides(bytes) {
   const presentation = await loadPresentation(bytes, presentationOptions);
-  if (!getSlides(presentation).length) throw Error('편집할 슬라이드가 없습니다.');
+  if (!getSlides(presentation).length) throw new UserError('편집할 슬라이드가 없습니다.');
   return { presentation, undo:[], undoBytes:0 };
 }
 export function saveSlides(model) { return savePresentation(model.presentation); }
@@ -213,9 +214,11 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   const resize = button('크기 조절',() => setDragMode('resize'));
   dragging.dataset.transform = 'move';
   resize.dataset.transform = 'resize';
-  const remove = button('개체 삭제',() => {
-    if (!selectedTarget || isShapeLocked(selectedTarget.shape) || !confirm('선택한 개체를 삭제할까요?')) return;
-    void change(() => { removeShape(selectedTarget.shape); selectedId = undefined; });
+  const remove = button('개체 삭제',async () => {
+    const target = selectedTarget;
+    if (!target || isShapeLocked(target.shape) ||
+        !await confirmAction('선택한 개체를 삭제할까요?','삭제') || selectedTarget !== target || !wrap.isConnected) return;
+    void change(() => { removeShape(target.shape); selectedId = undefined; });
   });
   const addText = button('텍스트 상자',async () => {
     if (await change(() => {
@@ -233,22 +236,32 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   photo.type = 'file';
   photo.accept = '.jpg,.jpeg,.png';
   photo.hidden = true;
+  function insertImage(name,bytes) {
+    const format = /\.png$/i.test(name) ? 'png' : /\.jpe?g$/i.test(name) ? 'jpeg' : '';
+    if (!format || bytes.length > 12*MiB) { status('12MB 이하의 PNG 또는 JPG를 선택하세요.',true); return; }
+    void change(() => {
+      const shape = addSlideImage(currentSlide(),bytes,{...insertPosition(),h:emu(size.height*0.45),
+        format,fit:'contain',name});
+      selectedId = getShapeId(shape);
+    });
+  }
   photo.addEventListener('change',async () => {
     const file = photo.files[0];
     photo.value = '';
     if (!file) return;
-    const format = /\.png$/i.test(file.name) ? 'png' : /\.jpe?g$/i.test(file.name) ? 'jpeg' : '';
-    if (!format || file.size > 12*MiB) { status('12MB 이하의 PNG 또는 JPG를 선택하세요.',true); return; }
+    if (file.size > 12*MiB) { status('12MB 이하의 PNG 또는 JPG를 선택하세요.',true); return; }
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      await change(() => {
-        const shape = addSlideImage(currentSlide(),bytes,{...insertPosition(),h:emu(size.height*0.45),
-          format,fit:'contain',name:file.name});
-        selectedId = getShapeId(shape);
-      });
-    } catch (error) { status(error.message,true); }
+      insertImage(file.name,new Uint8Array(await file.arrayBuffer()));
+    } catch (error) { status(userMessage(error,'이미지를 읽을 수 없습니다.'),true); }
   });
-  const addImage = button('이미지',() => photo.click());
+  const addImage = button('이미지',async () => {
+    if (!window.nanaDesktop?.pickFile) { photo.click(); return; }
+    try {
+      const picked = await window.nanaDesktop.pickFile('image');
+      if (picked?.error) status(picked.error,true);
+      else if (picked && wrap.isConnected) insertImage(picked.name,picked.bytes);
+    } catch (error) { status(userMessage(error,'이미지를 읽을 수 없습니다.'),true); }
+  });
   const undo = button('실행 취소',undoEdit);
   const play = button('슬라이드 쇼',() => playSlides());
   play.classList.add('slide-play');
@@ -258,7 +271,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   const add = button('새 슬라이드',() => change(() => {
     const layouts = getSlideLayouts(model.presentation);
     const layout = layouts.find(item => getSlideLayoutType(item) === 'blank') || layouts[0];
-    if (!layout) throw Error('사용할 슬라이드 레이아웃이 없습니다.');
+    if (!layout) throw new UserError('사용할 슬라이드 레이아웃이 없습니다.');
     const slide = addSlide(model.presentation,{layout});
     if (getSlideLayoutType(layout) !== 'blank') getSlideShapes(slide).slice().forEach(removeShape);
     moveSlide(model.presentation,slide,index+1);
@@ -272,8 +285,9 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   }));
   const moveUp = button('앞으로',() => change(() => { moveSlide(model.presentation,currentSlide(),index-1); index--; }));
   const moveDown = button('뒤로',() => change(() => { moveSlide(model.presentation,currentSlide(),index+1); index++; }));
-  const deleteSlide = button('슬라이드 삭제',() => {
-    if (!confirm('이 슬라이드를 삭제할까요?')) return;
+  const deleteSlide = button('슬라이드 삭제',async () => {
+    const slide = currentSlide();
+    if (!await confirmAction('이 슬라이드를 삭제할까요?','삭제') || currentSlide() !== slide || !wrap.isConnected) return;
     void change(() => {
       removeSlide(model.presentation,currentSlide());
       index = Math.min(index,slideList().length-1);
@@ -323,7 +337,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   setZoom(1);
 
   const editActions = el('div',undefined,'slide-text-actions');
-  const apply = button('적용',() => flush().catch(error => status(error.message,true)));
+  const apply = button('적용',() => flush().catch(error => status(userMessage(error,'텍스트 변경을 적용할 수 없습니다.'),true)));
   const cancel = button('취소',hideText);
   const textTools = el('div',undefined,'slide-text-actions');
   const bold = el('select');
@@ -378,7 +392,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
     const text = editInput.value;
     const sizePt = pointSize.value ? Number(pointSize.value) : null;
     if (sizePt !== null && (!Number.isFinite(sizePt) || sizePt < 8 || sizePt > 96)) {
-      throw Error('글자 크기는 8~96pt로 입력하세요.');
+      throw new UserError('글자 크기는 8~96pt로 입력하세요.');
     }
     const weight = bold.value;
     const updated = await change(() => {
@@ -387,14 +401,14 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
         ...(weight ? {bold:weight === 'bold'} : {}), ...(sizePt !== null ? {size:sizePt} : {}),
       });
     },true);
-    if (!updated) throw Error('텍스트 변경을 적용할 수 없습니다.');
+    if (!updated) throw new UserError('텍스트 변경을 적용할 수 없습니다.');
     hideText();
   }
 
   async function change(action, editing = false) {
     if (pending) return false;
     try { if (!editing && editShape) await flush(); }
-    catch (error) { status(error.message,true); return false; }
+    catch (error) { status(userMessage(error,'편집을 적용하지 못했습니다.'),true); return false; }
     if (pending) return false;
     pending = true;
     wrap.inert = true;
@@ -420,7 +434,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
           repaint(true);
         } catch {}
       }
-      status('편집을 적용하지 못했습니다. ' + (error.message || ''),true);
+      status(userMessage(error,'편집을 적용하지 못했습니다.'),true);
       return false;
     } finally { pending = false; wrap.inert = false; updateTools(); }
   }
@@ -436,7 +450,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       model.undoBytes -= checkpoint.bytes.length;
       index = checkpoint.index; selectedId = checkpoint.selectedId;
       changed(); repaint(true); status('');
-    } catch (error) { status('실행 취소에 실패했습니다. ' + error.message,true); }
+    } catch (error) { status(userMessage(error,'실행 취소에 실패했습니다.'),true); }
     finally { pending = false; wrap.inert = false; updateTools(); }
   }
 
@@ -446,7 +460,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       await flush();
       index = value; selectedId = undefined; dragMode = ''; status('');
       repaint(false);
-    } catch (error) { status(error.message,true); }
+    } catch (error) { status(userMessage(error,'슬라이드를 이동할 수 없습니다.'),true); }
   }
 
   function bitmap(slide) {
@@ -463,7 +477,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       if (!visible.length) { status('재생할 슬라이드가 없습니다.',true); return; }
       const first = fromBeginning ? visible[0] : list.slice(index).find(slide => !isSlideHidden(slide));
       show.open(visible,Math.max(0,visible.indexOf(first)));
-    } catch (error) { status(error.message,true); }
+    } catch (error) { status(userMessage(error,'슬라이드 쇼를 시작할 수 없습니다.'),true); }
   }
   function releaseThumbs() {
     thumbObserver?.disconnect();
@@ -521,7 +535,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
           selectedTarget = next.find(item => item.id === selectedId);
           handles(next);
           updateTools();
-        } catch (error) { status(error.message,true); }
+        } catch (error) { status(userMessage(error,'개체를 선택할 수 없습니다.'),true); }
       });
       const name = getShapeName(target.shape) || '개체 ' + target.id;
       const text = target.text ? getShapeText(target.shape).replace(/\s+/g,' ').trim().slice(0,65) : '';
@@ -606,10 +620,11 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       selectedId = undefined;
       selectedTarget = undefined;
       handles(objects(model.presentation,currentSlide()));
-    } catch (error) { status(error.message,true); }
+    } catch (error) { status(userMessage(error,'선택을 해제할 수 없습니다.'),true); }
   });
   function keyboard(event) {
-    if (event.defaultPrevented || event.isComposing || !wrap.isConnected || pending || show.active) return;
+    if (event.defaultPrevented || event.isComposing || !wrap.isConnected || pending || show.active ||
+        event.target.closest?.('#app-confirmation')) return;
     const key = event.key;
     const ctrl = event.ctrlKey || event.metaKey;
     if (key === 'F5' && !ctrl && !event.altKey) {
@@ -625,7 +640,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
     if (editShape && (key === 'Escape' || ctrl && key === 'Enter')) {
       event.preventDefault();
       if (key === 'Escape') hideText();
-      else void flush().catch(error => status(error.message,true));
+      else void flush().catch(error => status(userMessage(error,'텍스트 변경을 적용할 수 없습니다.'),true));
       viewport.focus({preventScroll:true});
       return;
     }

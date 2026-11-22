@@ -6,6 +6,10 @@ on:
         description: Build the Windows package
         type: boolean
         default: true
+      android:
+        description: Build the Android package
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
@@ -27,6 +31,7 @@ jobs:
           path: release/*.msi
           if-no-files-found: error
   android:
+    if: inputs.android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

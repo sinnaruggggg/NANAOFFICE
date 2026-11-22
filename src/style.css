@@ -26,6 +26,10 @@ button:disabled{opacity:.55;cursor:default}
 .bar h1{font-size:17px;flex:1;margin:0;min-width:128px;overflow-wrap:anywhere}
 .primary{background:#17584c;border-color:#17584c;color:#fff}
 .primary:hover{background:#13463d}
+#app-confirmation{width:min(420px,calc(100% - 28px));border:1px solid #bfcfc4;border-radius:14px;padding:18px;color:#17302e}
+#app-confirmation::backdrop{background:#18272180}
+#confirmation-message{margin:0 0 16px;line-height:1.5}
+.confirmation-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .panel{background:#fff;border:1px solid #d9e2d8;border-radius:14px;padding:14px}
 .split{display:grid;grid-template-columns:minmax(240px,1fr) minmax(245px,1fr);gap:14px}
 .sheet-wrap{max-height:68vh;overflow:auto}

@@ -3,6 +3,7 @@ import { FILE_LIMIT, openOffice, columnName, sheetCells } from './ooxml.js';
 import { patchableHwpx, textDelta } from './hwpx.js';
 import { encodeTable, encodeText, openText, readTable } from './text-files.js';
 import { openDocx } from './docx.js';
+import { confirmAction, UserError, userMessage } from './ui-messages.js';
 
 const byId = id => document.getElementById(id);
 const home = byId('home');
@@ -61,12 +62,12 @@ function removePreview() {
   if (previewURL) URL.revokeObjectURL(previewURL);
   previewURL = undefined;
 }
-function canSwitch() {
+async function canSwitch() {
   return !busy && (!(active?.dirty || active?.deck?.hasDraft?.()) ||
-    confirm('저장하지 않은 변경 사항이 있습니다. 문서를 닫을까요?'));
+    await confirmAction('저장하지 않은 변경 사항이 있습니다. 문서를 닫을까요?','닫기'));
 }
-function showHome() {
-  if (!canSwitch()) return;
+async function showHome() {
+  if (!await canSwitch() || busy) return;
   releaseDocument(active);
   active = null;
   editor.replaceChildren();
@@ -199,7 +200,7 @@ function renderWorkbook(office) {
     const rows = table.createTBody();
     let grid;
     try { grid = sheetCells(part); }
-    catch (error) { scroll.replaceChildren(el('p', error.message)); return; }
+    catch (error) { scroll.replaceChildren(el('p',userMessage(error,'이 시트를 표시할 수 없습니다.'))); return; }
     for (let i = startRow; i < Math.min(1048577, startRow + 30); i++) {
       const row = rows.insertRow();
       row.append(el('th', String(i)));
@@ -310,7 +311,7 @@ function renderHwp(doc, hwpx) {
               refresh();
             }
             input.value = value;
-          } catch (error) { status('문단을 편집할 수 없습니다. ' + error.message, true); }
+          } catch (error) { status(userMessage(error,'문단을 편집할 수 없습니다.'),true); }
         });
       }
       paragraphs.append(label);
@@ -359,7 +360,7 @@ function renderDocument(file) {
 }
 
 async function openDocument(name, bytes) {
-  if (!canSwitch()) return;
+  if (!await canSwitch() || busy) return;
   const extension = name.split('.').pop().toLowerCase();
   if (!accepted.has(extension)) {
     status('이 파일 형식은 열 수 없습니다. ' + [...accepted].map(value => value.toUpperCase()).join(', '), true);
@@ -378,10 +379,10 @@ async function openDocument(name, bytes) {
       next = { name, extension, doc: await openHwp(bytes), original: bytes };
       if (extension === 'hwpx' && bytes) {
         next.hwpx = patchableHwpx(bytes, next.doc.getSectionCount());
-        if (!next.hwpx) throw Error('지원하는 HWPX 섹션 구성을 찾지 못했습니다.');
+        if (!next.hwpx) throw new UserError('지원하는 HWPX 섹션 구성을 찾지 못했습니다.');
       }
     } else if (extension === 'pdf') {
-      if (!bytes) throw Error('PDF 파일을 선택하세요.');
+      if (!bytes) throw new UserError('PDF 파일을 선택하세요.');
       const pdfModule = await import('./pdf.js');
       const pdf = await pdfModule.openPdf(bytes);
       next = {name,extension,pdf,pdfModule,original:bytes};
@@ -427,10 +428,10 @@ async function openDocument(name, bytes) {
       home.hidden = false;
       document.body.classList.remove('editing');
     }
-    status('파일을 열 수 없습니다. ' + (error.message || String(error)), true);
+    status(userMessage(error,'파일을 열 수 없습니다. 파일 형식과 상태를 확인하세요.'),true);
   } finally { busy = false; }
 }
-function serialize() {
+async function serialize() {
   if (!active.dirty && active.original) return active.original;
   if (active.office) return active.office.serialize();
   if (active.hwpx) return active.hwpx.serialize();
@@ -441,10 +442,10 @@ function serialize() {
   if (active.deck) return active.slideModule.saveSlides(active.deck);
   const result = active.extension === 'hwp' ? active.doc.exportHwpWithReport() : active.doc.exportHwpxWithReport();
   try {
-    if (!result.hasBytes()) throw Error('이 문서를 안전하게 저장할 수 없습니다.');
+    if (!result.hasBytes()) throw new UserError('이 문서를 안전하게 저장할 수 없습니다.');
     const report = JSON.parse(result.contentLoss());
     if ((report.entries?.length || report.dropped?.length || report.losses?.length) &&
-        !confirm('한글 엔진에서 일부 요소의 손실 가능성을 보고했습니다. 편집한 사본을 저장할까요?')) return null;
+        !await confirmAction('한글 엔진에서 일부 요소의 손실 가능성을 보고했습니다. 편집한 사본을 저장할까요?','저장')) return null;
     return result.takeBytes();
   } finally { result.free(); }
 }
@@ -478,22 +479,35 @@ async function save() {
     const fallback = '편집 문서.' + active.extension;
     const name = (active.name.split('.').slice(0,-1).join('.') + ' - 편집.' + active.extension) || fallback;
     if (window.NanaAndroid) window.NanaAndroid.save(name, base64(bytes));
-    else if (window.nanaDesktop) window.nanaSaveResult(await window.nanaDesktop.save(name, bytes));
+    else if (window.nanaDesktop) {
+      const result = await window.nanaDesktop.save(name,bytes);
+      if (typeof result === 'string') window.nanaSaveResult(result);
+      else window.nanaSaveResult(result.status,result.detail);
+    }
     else {
       const url = URL.createObjectURL(new Blob([bytes]));
       const link = el('a'); link.href = url; link.download = name; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       window.nanaSaveResult('saved');
     }
-  } catch (error) { window.nanaSaveResult('error', error.message || String(error)); }
+  } catch (error) { window.nanaSaveResult('error',userMessage(error,'저장 위치와 파일 상태를 확인하세요.')); }
 }
 async function accept(file) {
   if (!file || busy) return;
   if (file.size > FILE_LIMIT) { status('48MB 이하의 파일을 선택하세요.', true); return; }
   try { await openDocument(file.name, new Uint8Array(await file.arrayBuffer())); }
-  catch (error) { status('파일을 읽지 못했습니다. ' + error.message,true); }
+  catch (error) { status(userMessage(error,'파일을 읽지 못했습니다.'),true); }
 }
-function chooseFile(types = allTypes) {
+async function chooseFile(types = allTypes) {
+  if (busy) return;
+  if (window.nanaDesktop?.pickFile) {
+    try {
+      const picked = await window.nanaDesktop.pickFile(types === '.pdf' ? 'pdf' : 'document');
+      if (picked?.error) status(picked.error,true);
+      else if (picked) await openDocument(picked.name,picked.bytes);
+    } catch (error) { status(userMessage(error,'파일 선택 창을 열 수 없습니다.'),true); }
+    return;
+  }
   picker.accept = types;
   picker.click();
 }
@@ -508,6 +522,7 @@ document.querySelectorAll('[data-new]').forEach(card => card.onclick = () => {
   void openDocument(names[ext] + '.' + ext, null);
 });
 document.addEventListener('keydown', event => {
+  if (event.target.closest?.('#app-confirmation')) return;
   if (!(event.ctrlKey || event.metaKey)) return;
   if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
   if (event.key.toLowerCase() === 'o') { event.preventDefault(); chooseFile(); }
@@ -523,7 +538,7 @@ if (window.nanaDesktop) {
   advanced.onclick = async () => {
     advanced.disabled = true;
     try { status(''); await window.nanaDesktop.openAdvanced(); }
-    catch (error) { status('ONLYOFFICE를 열지 못했습니다. ' + error.message,true); }
+    catch (error) { status(userMessage(error,'ONLYOFFICE를 열지 못했습니다.'),true); }
     finally { advanced.disabled = false; }
   };
   window.nanaDesktop.onProgress(text => status(text));

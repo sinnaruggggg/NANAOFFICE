@@ -1,3 +1,4 @@
+import { UserError } from './ui-messages.js';
 import { getDocument, GlobalWorkerOptions, PDFWorker } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import worker from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 
@@ -26,7 +27,7 @@ export async function openPdf(bytes) {
   try { return { viewer:await task.promise, rotations:new Map(), notes:[], history:[], dispose }; }
   catch (error) {
     await dispose().catch(() => {});
-    throw Error(error.name === 'PasswordException' ? '암호가 설정된 PDF는 이 버전에서 열 수 없습니다.' : 'PDF를 읽을 수 없습니다.');
+    throw new UserError(error.name === 'PasswordException' ? '암호가 설정된 PDF는 이 버전에서 열 수 없습니다.' : 'PDF를 읽을 수 없습니다.');
   }
 }
 

@@ -215,8 +215,8 @@ public class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
-        web.evaluateJavascript("(() => { const show = document.querySelector('.slide-show[open]'); " +
-                "if (show) { show.close(); return null; } return document.getElementById('workspace').hidden; })()", value -> {
+        web.evaluateJavascript("(() => { const dialog = document.querySelector('#app-confirmation[open],.slide-show[open]'); " +
+                "if (dialog) { dialog.close(); return null; } return document.getElementById('workspace').hidden; })()", value -> {
             if ("false".equals(value)) web.evaluateJavascript("document.getElementById('home-button').click()", null);
             else if ("true".equals(value)) new AlertDialog.Builder(this).setMessage("NANAOFFICE를 닫을까요?")
                 .setNegativeButton("취소", null).setPositiveButton("닫기", (dialog, which) -> finish()).show();

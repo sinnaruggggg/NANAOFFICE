@@ -1,3 +1,4 @@
+import { UserError } from './ui-messages.js';
 import { unzipSync, zipSync } from 'fflate';
 
 const utf8 = new TextEncoder();
@@ -16,19 +17,19 @@ function elements(node, ns, name) {
 }
 export function readXml(files, path) {
   const data = files[path];
-  if (!data) throw Error('문서 요소를 찾을 수 없습니다.');
+  if (!data) throw new UserError('문서 요소를 찾을 수 없습니다.');
   const encoding = data[0] === 255 && data[1] === 254 ? 'utf-16le' :
     data[0] === 254 && data[1] === 255 ? 'utf-16be' : 'utf-8';
   const content = new TextDecoder(encoding, { fatal: true }).decode(data);
-  if (/<!DOCTYPE/i.test(content)) throw Error('지원하지 않는 XML 선언입니다.');
+  if (/<!DOCTYPE/i.test(content)) throw new UserError('지원하지 않는 XML 선언입니다.');
   const xml = parser.parseFromString(content, 'application/xml');
-  if (xml.querySelector('parsererror')) throw Error('문서 XML을 읽을 수 없습니다.');
+  if (xml.querySelector('parsererror')) throw new UserError('문서 XML을 읽을 수 없습니다.');
   return xml;
 }
 function partPath(base, target) {
-  if (!target || target.includes('\\') || /^[a-z][a-z\d+.-]*:/i.test(target)) throw Error('잘못된 문서 경로입니다.');
+  if (!target || target.includes('\\') || /^[a-z][a-z\d+.-]*:/i.test(target)) throw new UserError('잘못된 문서 경로입니다.');
   const url = new URL(target, 'https://package.invalid/' + base);
-  if (url.hostname !== 'package.invalid' || url.search || url.hash) throw Error('잘못된 문서 경로입니다.');
+  if (url.hostname !== 'package.invalid' || url.search || url.hash) throw new UserError('잘못된 문서 경로입니다.');
   return decodeURIComponent(url.pathname.slice(1));
 }
 
@@ -52,15 +53,15 @@ export function unzipDocument(bytes) {
   let count = 0;
   return unzipSync(bytes, { filter(file) {
     total += file.originalSize;
-    if (++count > 12000 || total > 192 * 1024 * 1024) throw Error('압축을 푼 문서가 너무 큽니다.');
-    if (file.name.split('/').some(part => part === '..') || file.name.startsWith('/')) throw Error('잘못된 압축 파일 경로입니다.');
+    if (++count > 12000 || total > 192 * 1024 * 1024) throw new UserError('압축을 푼 문서가 너무 큽니다.');
+    if (file.name.split('/').some(part => part === '..') || file.name.startsWith('/')) throw new UserError('잘못된 압축 파일 경로입니다.');
     return true;
   }});
 }
 export function openOffice(bytes) {
   const files = unzipDocument(bytes);
   const structure = parts(files, 'xl/', 'sheet', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels');
-  if (!structure.list.length) throw Error('편집할 시트가 없습니다.');
+  if (!structure.list.length) throw new UserError('편집할 시트가 없습니다.');
   const strings = files['xl/sharedStrings.xml']
     ? elements(readXml(files, 'xl/sharedStrings.xml'), XLS, 'si')
       .map(entry => elements(entry, XLS, 't').map(item => item.textContent).join(''))
@@ -97,7 +98,7 @@ function columnIndex(reference) {
   return value;
 }
 export function sheetCells(part) {
-  if (part.xml.documentElement.localName !== 'worksheet') throw Error('차트 전용 시트는 편집할 수 없습니다.');
+  if (part.xml.documentElement.localName !== 'worksheet') throw new UserError('차트 전용 시트는 편집할 수 없습니다.');
   const sheet = elements(part.xml, XLS, 'sheetData')[0];
   const rows = new Map(children(sheet, 'row').map(row => [Number(row.getAttribute('r')), row]));
   const cells = new Map(elements(sheet, XLS, 'c').map(cell => [cell.getAttribute('r'), cell]));
