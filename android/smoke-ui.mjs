@@ -70,6 +70,7 @@ try {
   }
 
   await expect("!document.querySelector('#home').hidden && document.querySelector('#open-pdf').innerText.includes('PDF')");
+  await timeout(450);
   await screenshot('nana-mobile-home.png');
   await tap('[data-new="pptx"]');
   await expect("document.querySelector('.slide-artwork')?.naturalWidth > 100 && document.querySelectorAll('.slide-object').length > 0");

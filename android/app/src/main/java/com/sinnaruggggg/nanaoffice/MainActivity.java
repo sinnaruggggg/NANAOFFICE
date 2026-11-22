@@ -64,12 +64,6 @@ public class MainActivity extends Activity {
             return insets;
         });
         setContentView(frame);
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            int lightBars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                    | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-            var controller = getWindow().getInsetsController();
-            if (controller != null) controller.setSystemBarsAppearance(lightBars, lightBars);
-        }
         web.loadUrl(HOME);
     }
 
