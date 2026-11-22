@@ -11,6 +11,11 @@ files:
   - package.json
   - "!node_modules/**"
 win:
+  extraResources:
+    - from: .office-build/DesktopEditors_x64.zip
+      to: office/DesktopEditors_x64.zip
+    - from: desktop/resources
+      to: office
   target:
     - target: msi
       arch: [x64]

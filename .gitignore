@@ -10,3 +10,4 @@ android/local.properties
 *.keystore
 __pycache__/
 qa-local.mjs
+/.office-build/

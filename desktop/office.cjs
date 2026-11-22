@@ -1,56 +1,72 @@
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const { createHash, randomUUID } = require('node:crypto');
+const fs = require('node:fs/promises');
+const { createReadStream } = require('node:fs');
+const { createHash } = require('node:crypto');
+const { execFile, spawn } = require('node:child_process');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { Readable, Transform } = require('node:stream');
-const { pipeline } = require('node:stream/promises');
-const exec = promisify(execFile);
-const release = 'https://github.com/ONLYOFFICE/DesktopEditors/releases/download/v10.0.0/DesktopEditors_x64.zip';
-const sha = '54979d04f1cdca56deb0c62e0356355a45f392cdb54f04f6b7e436b1f44c3605';
-const size = 397286158;
 
-async function prepareOffice(local, progress) {
-  const location = path.join(local, 'DeskEditRoom', 'engines', 'onlyoffice-10.0.0-x64');
-  const executable = path.join(location, 'DesktopEditors.exe');
-  if (fs.existsSync(executable)) return executable;
-  const base = path.join(local, 'NANAOFFICE', 'engines');
-  const installed = path.join(base, 'onlyoffice-10.0.0-x64');
-  const alternate = path.join(installed, 'DesktopEditors.exe');
-  if (fs.existsSync(alternate)) return alternate;
-  const permission = require('electron').dialog.showMessageBoxSync({
-    type:'question', buttons:['다운로드','취소'], cancelId:1,
-    title:'고급 편집기 설치', message:'고급 편집에 공식 편집기 다운로드(397 MB)가 필요합니다.',
-  });
-  if (permission !== 0) return null;
-  await fsp.mkdir(base, {recursive:true});
-  const stage = path.join(base, 'staging-' + randomUUID());
-  await fsp.mkdir(stage);
-  try {
-    const archive = path.join(stage, 'official.zip');
-    const files = path.join(stage, 'files');
-    const response = await fetch(release, {signal:AbortSignal.timeout(20 * 60 * 1000)});
-    if (!response.ok || !response.body) throw Error('공식 배포본을 내려받지 못했습니다.');
-    const hash = createHash('sha256');
-    let received = 0, percent = -1;
-    await pipeline(Readable.fromWeb(response.body), new Transform({
-      transform(chunk, _, done) {
-        received += chunk.length;
-        if (received > size) { done(Error('파일 크기가 공식 배포본과 다릅니다.')); return; }
-        hash.update(chunk);
-        const next = Math.floor(received * 100 / size);
-        if (next !== percent) { progress('공식 편집기 다운로드 중… ' + next + '%'); percent = next; }
-        done(null, chunk);
-      },
-    }), fs.createWriteStream(archive, {flags:'wx'}));
-    if (received !== size || hash.digest('hex') !== sha) throw Error('공식 배포본의 SHA-256 값이 일치하지 않습니다.');
-    await fsp.mkdir(files);
-    progress('공식 편집기의 압축을 푸는 중…');
-    await exec(path.join(process.env.SystemRoot, 'System32', 'tar.exe'), ['-xf', archive, '-C', files], {windowsHide:true});
-    if (!fs.existsSync(path.join(files,'DesktopEditors.exe'))) throw Error('편집기 실행 파일이 없습니다.');
-    await fsp.rename(files, installed);
-    return alternate;
-  } finally { await fsp.rm(stage, {recursive:true, force:true}); }
+const version = '10.0.0';
+const distribution = Object.freeze({
+  version,
+  name:'DesktopEditors_x64.zip',
+  url:'https://github.com/ONLYOFFICE/DesktopEditors/releases/download/v'+version+'/DesktopEditors_x64.zip',
+  size:397286158,
+  sha:'54979d04f1cdca56deb0c62e0356355a45f392cdb54f04f6b7e436b1f44c3605',
+});
+const editors = new Map([['docx','--new:word'],['xlsx','--new:cell'],['pptx','--new:slide']]);
+const officeFormat = filename => editors.has(path.extname(filename).slice(1).toLowerCase());
+
+async function verifyArchive(archive) {
+  if ((await fs.stat(archive)).size !== distribution.size) throw Error('오피스 편집기 패키지 크기가 일치하지 않습니다.');
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(archive)) hash.update(chunk);
+  if (hash.digest('hex') !== distribution.sha) throw Error('오피스 편집기 패키지의 확인 값이 일치하지 않습니다.');
 }
-module.exports = {prepareOffice};
+
+function createOfficeLauncher({archive,cache,progress}) {
+  const dir = path.join(cache,'onlyoffice-desktop-'+distribution.version+'-x64');
+  const exe = path.join(dir,'DesktopEditors.exe');
+  let preparing;
+
+  async function prepare() {
+    try { await fs.access(exe); return exe; } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    progress('오피스 편집기를 준비하는 중입니다. 처음 한 번만 진행합니다.');
+    await verifyArchive(archive);
+    await fs.mkdir(cache,{recursive:true});
+    const stage = await fs.mkdtemp(path.join(cache,'office-'));
+    try {
+      const tar = path.join(process.env.SystemRoot,'System32','tar.exe');
+      await promisify(execFile)(tar,['-xf',archive,'-C',stage],{windowsHide:true});
+      await fs.access(path.join(stage,'DesktopEditors.exe'));
+      try { await fs.rename(stage,dir); }
+      catch (error) {
+        if (!['EEXIST','ENOTEMPTY','EPERM'].includes(error.code)) throw error;
+        await fs.access(exe);
+      }
+      return exe;
+    } finally { await fs.rm(stage,{recursive:true,force:true}); }
+  }
+
+  return async ({format,file}) => {
+    const args = ['--lang:ko'];
+    if (file !== undefined) {
+      if (!path.isAbsolute(file) || !officeFormat(file) || !(await fs.stat(file)).isFile()) {
+        throw Error('열 수 있는 오피스 문서가 아닙니다.');
+      }
+      args.push(file);
+    } else if (editors.has(format)) args.push(editors.get(format));
+    else if (format !== 'home') throw Error('지원하지 않는 오피스 문서입니다.');
+
+    preparing ??= prepare().finally(() => { preparing = undefined; });
+    const executable = await preparing;
+    await new Promise((resolve,reject) => {
+      const process = spawn(executable,args,{cwd:path.dirname(executable),detached:true,stdio:'ignore'});
+      process.once('error',reject);
+      process.once('spawn',() => { process.unref(); resolve(); });
+    });
+  };
+}
+
+module.exports = {distribution,officeFormat,verifyArchive,createOfficeLauncher};

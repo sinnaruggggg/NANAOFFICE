@@ -1,8 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
-const { prepareOffice } = require('./office.cjs');
+const { distribution, officeFormat, createOfficeLauncher } = require('./office.cjs');
 
 const LINK = 'nanaoffice://local';
 const LIMIT = 48 * 1024 * 1024;
@@ -13,16 +12,35 @@ protocol.registerSchemesAsPrivileged([{ scheme:'nanaoffice', privileges:{
   standard:true, secure:true, supportFetchAPI:true, corsEnabled:true,
 }}]);
 let window;
-let queued = process.argv.find(supported);
+let launchOffice;
+let rendererReady = false;
+const queued = process.argv.filter(arg => path.isAbsolute(arg) && supported(arg));
 const hiddenQA = process.env.NANAOFFICE_QA_HIDDEN === '1';
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', (_, args) => {
   if (window && !hiddenQA) { if (window.isMinimized()) window.restore(); window.focus(); }
-  const file = args.find(supported);
-  if (file) void receive(file);
+  for (const file of args.filter(arg => path.isAbsolute(arg) && supported(arg))) {
+    if (rendererReady) void receive(file);
+    else queued.push(file);
+  }
 });
 
+async function openNative(request) {
+  try {
+    await launchOffice(request);
+    return {opened:true};
+  } catch (error) {
+    console.error(error);
+    return {error:'오피스 편집기를 열지 못했습니다. 파일과 설치 상태를 확인하세요.'};
+  }
+}
+
 async function receive(file) {
+  if (officeFormat(file)) {
+    const result = await openNative({file});
+    if (!window.isDestroyed()) window.webContents.send('office-result',result);
+    return;
+  }
   try {
     if ((await fs.stat(file)).size > LIMIT) throw Error('48MB 이하의 파일을 선택하세요.');
     window.webContents.send('open-file', path.basename(file), new Uint8Array(await fs.readFile(file)));
@@ -59,6 +77,13 @@ app.whenReady().then(async () => {
     icon:path.join(dist, 'icon.png'),
     webPreferences:{ preload:path.join(__dirname, 'preload.cjs'), contextIsolation:true, sandbox:true, nodeIntegration:false },
   });
+  const officeResources = app.isPackaged ? path.join(process.resourcesPath,'office') : path.resolve(__dirname,'../.office-build');
+  const local = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA,'NANAOFFICE') : app.getPath('userData');
+  launchOffice = createOfficeLauncher({
+    archive:path.join(officeResources,distribution.name),
+    cache:path.join(local,'engines'),
+    progress:text => { if (!window.isDestroyed()) window.webContents.send('advanced-progress',text); },
+  });
   window.webContents.setWindowOpenHandler(() => ({ action:'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-prevent-unload',event => {
@@ -70,10 +95,9 @@ app.whenReady().then(async () => {
   });
   window.once('ready-to-show', () => { if (!hiddenQA) window.show(); });
   ipcMain.on('editor-ready', event => {
-    if (event.sender !== window.webContents || !queued) return;
-    const file = queued;
-    queued = null;
-    void receive(file);
+    if (event.sender !== window.webContents || rendererReady) return;
+    rendererReady = true;
+    for (const file of queued.splice(0)) void receive(file);
   });
   function allowed(event) {
     if (event.sender !== window.webContents || event.senderFrame.url !== LINK + '/index.html') throw Error('지원하지 않는 요청입니다.');
@@ -94,6 +118,7 @@ app.whenReady().then(async () => {
       if (selected.canceled || !selected.filePaths[0]) return null;
       const file = selected.filePaths[0];
       if (!extensions.includes(path.extname(file).slice(1).toLowerCase())) return {error:'지원하는 형식의 파일을 선택하세요.'};
+      if (type === 'document' && officeFormat(file)) return await openNative({file});
       const limit = type === 'image' ? 12 * 1024 * 1024 : LIMIT;
       if ((await fs.stat(file)).size > limit) {
         return {error:type === 'image' ? '12MB 이하의 이미지를 선택하세요.' : '48MB 이하의 문서를 선택하세요.'};
@@ -121,31 +146,16 @@ app.whenReady().then(async () => {
     finally { await fs.rm(tmp, {force:true}); }
     return 'saved';
   });
-  ipcMain.handle('open-advanced', async event => {
+  ipcMain.handle('launch-office', (event,format) => {
     allowed(event);
-    const start = await dialog.showMessageBox(window, {
-      type:'question', title:'ONLYOFFICE', message:'어떤 작업을 시작할까요?',
-      buttons:['기존 파일 열기','새 스프레드시트','새 프레젠테이션','취소'], cancelId:3,
-    });
-    if (start.response === 3) return;
-    let argument = ['','--new:cell','--new:slide'][start.response];
-    if (!argument) {
-      const files = await dialog.showOpenDialog(window, {
-        title:'고급 편집할 문서 열기', buttonLabel:'열기', properties:['openFile'],
-        filters:[{name:'엑셀과 파워포인트',extensions:['xlsx','pptx']}],
-      });
-      if (files.canceled) return;
-      [argument] = files.filePaths;
+    return openNative({format});
+  });
+  ipcMain.handle('open-dropped-office', (event,file) => {
+    allowed(event);
+    if (typeof file !== 'string' || !path.isAbsolute(file) || !officeFormat(file)) {
+      return {error:'파일 열기에서 오피스 문서를 선택하세요.'};
     }
-    const executable = await prepareOffice(process.env.LOCALAPPDATA || path.dirname(app.getPath('appData')),
-      text => event.sender.send('advanced-progress', text));
-    if (!executable) return;
-    await new Promise((resolve, reject) => {
-      const process = spawn(executable, ['--lang:ko',argument], { cwd:path.dirname(executable), detached:true, stdio:'ignore' });
-      process.once('error', reject);
-      process.once('spawn', () => { process.unref(); resolve(); });
-    });
-    event.sender.send('advanced-progress','ONLYOFFICE 편집 창을 열었습니다.');
+    return openNative({file});
   });
   await window.loadURL(LINK + '/index.html');
   if (hiddenQA) {

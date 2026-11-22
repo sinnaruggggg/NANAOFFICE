@@ -1,12 +1,12 @@
 {
   "name": "nanaoffice",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "인터넷 연결 없이 문서를 편집하는 NANAOFFICE",
   "main": "desktop/main.cjs",
   "scripts": {
     "build": "vite build",
     "start": "electron .",
-    "build:win": "electron-builder --win msi --x64 --publish never"
+    "build:win": "node scripts/stage-office.cjs && electron-builder --win msi --x64 --publish never"
   },
   "keywords": [],
   "author": "sinnaruggggg",

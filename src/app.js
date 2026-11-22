@@ -13,6 +13,7 @@ const picker = byId('picker');
 const saveButton = byId('save');
 const accepted = new Set(['hwp','hwpx','pptx','xlsx','pdf','docx','csv','tsv','txt','md']);
 const allTypes = [...accepted].map(extension => '.' + extension).join(',');
+const officeTypes = new Set(['docx','xlsx','pptx']);
 let active = null;
 let busy = false;
 let previewURL;
@@ -494,6 +495,10 @@ async function save() {
 }
 async function accept(file) {
   if (!file || busy) return;
+  if (window.nanaDesktop?.openDroppedOffice && officeTypes.has(file.name.split('.').pop().toLowerCase())) {
+    await launchDesktopOffice(() => window.nanaDesktop.openDroppedOffice(file));
+    return;
+  }
   if (file.size > FILE_LIMIT) { status('48MB 이하의 파일을 선택하세요.', true); return; }
   try { await openDocument(file.name, new Uint8Array(await file.arrayBuffer())); }
   catch (error) { status(userMessage(error,'파일을 읽지 못했습니다.'),true); }
@@ -503,7 +508,7 @@ async function chooseFile(types = allTypes) {
   if (window.nanaDesktop?.pickFile) {
     try {
       const picked = await window.nanaDesktop.pickFile(types === '.pdf' ? 'pdf' : 'document');
-      if (picked?.error) status(picked.error,true);
+      if (picked?.opened || picked?.error) officeResult(picked);
       else if (picked) await openDocument(picked.name,picked.bytes);
     } catch (error) { status(userMessage(error,'파일 선택 창을 열 수 없습니다.'),true); }
     return;
@@ -518,6 +523,10 @@ byId('home-button').onclick = showHome;
 saveButton.onclick = save;
 document.querySelectorAll('[data-new]').forEach(card => card.onclick = () => {
   const ext = card.dataset.new;
+  if (window.nanaDesktop?.launchOffice && officeTypes.has(ext)) {
+    void launchDesktopOffice(() => window.nanaDesktop.launchOffice(ext));
+    return;
+  }
   const names = {hwpx:'새 한글 문서',xlsx:'새 스프레드시트',pptx:'새 프레젠테이션',docx:'새 워드 문서',txt:'새 텍스트 문서'};
   void openDocument(names[ext] + '.' + ext, null);
 });
@@ -532,15 +541,24 @@ window.addEventListener('drop', event => { event.preventDefault(); void accept(e
 window.addEventListener('beforeunload', event => {
   if (active?.dirty || active?.deck?.hasDraft?.()) { event.preventDefault(); event.returnValue = ''; }
 });
+function officeResult(result) {
+  if (result?.error) status(result.error,true);
+  else if (result?.opened) status('오피스 편집 창을 열었습니다.');
+}
+let openingOffice = false;
+async function launchDesktopOffice(open) {
+  if (openingOffice) return;
+  openingOffice = true;
+  status('오피스 편집기를 여는 중입니다.');
+  try { officeResult(await open()); }
+  catch (error) { status(userMessage(error,'오피스 편집기를 열지 못했습니다.'),true); }
+  finally { openingOffice = false; }
+}
 if (window.nanaDesktop) {
-  const advanced = byId('advanced');
-  advanced.hidden = false;
-  advanced.onclick = async () => {
-    advanced.disabled = true;
-    try { status(''); await window.nanaDesktop.openAdvanced(); }
-    catch (error) { status(userMessage(error,'ONLYOFFICE를 열지 못했습니다.'),true); }
-    finally { advanced.disabled = false; }
-  };
+  const officeEditor = byId('office-editor');
+  officeEditor.hidden = !window.nanaDesktop.launchOffice;
+  officeEditor.onclick = () => launchDesktopOffice(() => window.nanaDesktop.launchOffice('home'));
+  window.nanaDesktop.onOfficeResult?.(officeResult);
   window.nanaDesktop.onProgress(text => status(text));
   window.nanaDesktop.onOpen((name, bytes) => void openDocument(name, bytes));
   window.nanaDesktop.ready();
