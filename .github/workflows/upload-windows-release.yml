@@ -17,6 +17,7 @@ jobs:
   upload:
     runs-on: windows-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: NANAOFFICE-windows
@@ -44,6 +45,7 @@ jobs:
           $archive = Join-Path $image 'NANAOFFICE/resources/office/DesktopEditors_x64.zip'
           $expected = '54979d04f1cdca56deb0c62e0356355a45f392cdb54f04f6b7e436b1f44c3605'
           if ((Get-FileHash $archive).Hash -ne $expected) { throw 'Bundled editor digest mismatch' }
+          & ./scripts/verify-windows-signatures.ps1 -Installer $msi -AppDirectory (Join-Path $image 'NANAOFFICE')
           gh release upload $tag $msi --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $assets = (gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json).assets

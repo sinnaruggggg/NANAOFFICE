@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "start": "electron .",
-    "build:win": "node scripts/stage-office.cjs && electron-builder --win msi --x64 --publish never"
+    "build:win": "node scripts/stage-office.cjs && electron-builder --win msi --x64 --publish never",
+    "build:win:signed": "node scripts/build-signed-windows.cjs"
   },
   "keywords": [],
   "author": "sinnaruggggg",

@@ -39,6 +39,8 @@ npm run build
 npm run build:win
 ```
 
+Windows 공개 배포용 MSI는 신뢰된 게시자 인증서로 서명합니다. `npm ci`와 `npm run build`를 마친 뒤, Windows 인증서 저장소를 쓰는 경우 `NANAOFFICE_SIGNING_CERT_SHA1`에 인증서 지문을 설정합니다. Azure Artifact Signing을 쓰는 경우 `NANAOFFICE_SIGNING_AZURE_ENDPOINT`, `NANAOFFICE_SIGNING_AZURE_ACCOUNT`, `NANAOFFICE_SIGNING_AZURE_PROFILE`, `NANAOFFICE_SIGNING_AZURE_PUBLISHER`를 설정하고 서명 권한으로 인증합니다. `npm run build:win:signed` 명령은 MSI와 앱의 Authenticode 서명을 검증합니다.
+
 Android는 동일한 `dist/`를 사용합니다. 앱 ID는 `com.sinnaruggggg.nanaoffice`입니다.
 
 ```sh
