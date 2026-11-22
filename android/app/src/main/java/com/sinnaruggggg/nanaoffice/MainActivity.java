@@ -7,7 +7,11 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -36,6 +40,8 @@ public class MainActivity extends Activity {
     private WebView web;
     private ValueCallback<Uri[]> pendingOpen;
     private String pendingSave;
+    private boolean showingSlides;
+    private int savedSystemUi;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -116,6 +122,10 @@ public class MainActivity extends Activity {
     }
 
     private class LocalStorageBridge {
+        @JavascriptInterface public void setPresentationMode(boolean enabled) {
+            runOnUiThread(() -> showPresentation(enabled));
+        }
+
         @JavascriptInterface public void save(String filename, String encoded) {
             runOnUiThread(() -> {
                 if (pendingSave != null) return;
@@ -180,10 +190,35 @@ public class MainActivity extends Activity {
                 JSONObject.quote(result) + "," + JSONObject.quote(detail) + ")", null);
     }
 
+    private void showPresentation(boolean enabled) {
+        if (isDestroyed() || showingSlides == enabled) return;
+        showingSlides = enabled;
+        var window = getWindow();
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        View decor = window.getDecorView();
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = decor.getWindowInsetsController();
+            if (controller == null) return;
+            if (enabled) {
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.systemBars());
+            } else {
+                controller.show(WindowInsets.Type.systemBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_DEFAULT);
+            }
+        } else if (enabled) {
+            savedSystemUi = decor.getSystemUiVisibility();
+            decor.setSystemUiVisibility(savedSystemUi | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } else decor.setSystemUiVisibility(savedSystemUi);
+    }
+
     @Override public void onBackPressed() {
-        web.evaluateJavascript("document.getElementById('workspace').hidden", value -> {
+        web.evaluateJavascript("(() => { const show = document.querySelector('.slide-show[open]'); " +
+                "if (show) { show.close(); return null; } return document.getElementById('workspace').hidden; })()", value -> {
             if ("false".equals(value)) web.evaluateJavascript("document.getElementById('home-button').click()", null);
-            else new AlertDialog.Builder(this).setMessage("NANAOFFICE를 닫을까요?")
+            else if ("true".equals(value)) new AlertDialog.Builder(this).setMessage("NANAOFFICE를 닫을까요?")
                 .setNegativeButton("취소", null).setPositiveButton("닫기", (dialog, which) -> finish()).show();
         });
     }

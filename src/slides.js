@@ -2,10 +2,11 @@ import {
   addSlide, addSlideImage, addSlideShape, addSlideTextBox, duplicateSlideAt, emu,
   getGroupChildren, getGroupTransform, getShapeBoundsResolved, getShapeId, getShapeKind, getShapeName,
   getShapeRotation, getShapeText, getSlideLayouts, getSlideLayoutType, getSlideShapes, getSlideSize,
-  getSlides, getSlideTitle, hasShapeText, isShapeLocked, loadPresentation, moveSlide, removeShape,
+  getSlides, getSlideTitle, hasShapeText, isShapeLocked, isSlideHidden, loadPresentation, moveSlide, removeShape,
   removeSlide, savePresentation, setShapeBounds, setShapeFill, setShapeText, setShapeTextFormat,
 } from '@office-kit/pptx';
 import { renderSlideToSvg } from '@office-kit/pptx-preview';
+import { createSlideShow } from './slide-show.js';
 import './slides.css';
 
 const MiB = 1024 * 1024;
@@ -102,6 +103,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   stage.style.aspectRatio = size.width + ' / ' + size.height;
   const slideList = () => getSlides(model.presentation);
   const currentSlide = () => slideList()[index];
+  const show = createSlideShow(parent,{el,button,bitmap});
   const slideNumber = el('span',undefined,'slide-count');
   slideNumber.setAttribute('aria-live','polite');
 
@@ -248,7 +250,9 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   });
   const addImage = button('이미지',() => photo.click());
   const undo = button('실행 취소',undoEdit);
-  homeTools.append(changeText,dragging,resize,remove,undo);
+  const play = button('슬라이드 쇼',() => playSlides());
+  play.classList.add('slide-play');
+  homeTools.append(play,changeText,dragging,resize,remove,undo);
   insertTools.append(addText,addBox,addImage,photo);
 
   const add = button('새 슬라이드',() => change(() => {
@@ -276,7 +280,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       selectedId = undefined;
     });
   });
-  slideTools.append(add,duplicate,moveUp,moveDown,deleteSlide);
+  slideTools.append(button('처음부터 재생',() => playSlides(true)),add,duplicate,moveUp,moveDown,deleteSlide);
   const menu = [
     {key:'home',name:'홈',panel:homeTools},
     {key:'insert',name:'삽입',panel:insertTools},
@@ -450,6 +454,17 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
       eastAsianFamily:'sans-serif',resolveFamily:family => family || 'sans-serif'});
     return URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
   }
+  async function playSlides(fromBeginning = false) {
+    if (pending || show.active) return;
+    try {
+      if (editShape) await flush();
+      const list = slideList();
+      const visible = list.filter(slide => !isSlideHidden(slide));
+      if (!visible.length) { status('재생할 슬라이드가 없습니다.',true); return; }
+      const first = fromBeginning ? visible[0] : list.slice(index).find(slide => !isSlideHidden(slide));
+      show.open(visible,Math.max(0,visible.indexOf(first)));
+    } catch (error) { status(error.message,true); }
+  }
   function releaseThumbs() {
     thumbObserver?.disconnect();
     for (const url of thumbUrls.values()) URL.revokeObjectURL(url);
@@ -594,9 +609,14 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
     } catch (error) { status(error.message,true); }
   });
   function keyboard(event) {
-    if (event.defaultPrevented || event.isComposing || !wrap.isConnected || pending) return;
+    if (event.defaultPrevented || event.isComposing || !wrap.isConnected || pending || show.active) return;
     const key = event.key;
     const ctrl = event.ctrlKey || event.metaKey;
+    if (key === 'F5' && !ctrl && !event.altKey) {
+      event.preventDefault();
+      void playSlides(!event.shiftKey);
+      return;
+    }
     if (ctrl && key.toLowerCase() === 's') {
       event.preventDefault();
       document.querySelector('#save')?.click();
@@ -683,6 +703,7 @@ export function renderSlides(parent, model, {el,button,status,changed}) {
   repaint(true);
   return () => {
     paintGeneration++;
+    show.dispose();
     document.removeEventListener('keydown',keyboard);
     releaseThumbs();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
